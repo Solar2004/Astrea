@@ -32,6 +32,11 @@
     $env:ASTREA_GUI_PORT    -> puerto local (127.0.0.1) del ayudante GUI (default 7701)
     $env:ASTREA_UNINSTALL=1 -> desinstala el agente
     $env:ASTREA_LOCAL_EXE   -> ruta a un astrea-agent.exe ya presente (lo usa el MSI; no descarga)
+    $env:ASTREA_ADDR        -> IP en la que escucha el agente SIN usar Tailscale (LAN o pruebas;
+                               p. ej. el CI instala el MSI con 127.0.0.1). Normalmente vacio.
+    $env:ASTREA_MSI=1       -> lo fija el MSI: corre como SYSTEM sin consola, asi que no
+                               pregunta nada, no abre el login de Tailscale y deja el log en
+                               C:\ProgramData\Astrea\install.log
 #>
 
 & {
@@ -53,6 +58,7 @@ $GuiPort    = if ($env:ASTREA_GUI_PORT) { $env:ASTREA_GUI_PORT } else { '7701' }
 $Headless   = $env:ASTREA_HEADLESS -ne '0'
 $RuleName   = 'Astrea Agent'
 $Elevated   = $env:ASTREA_ELEVATED -eq '1'
+$Msi        = $env:ASTREA_MSI -eq '1'
 
 function Step($msg) { Write-Host ""; Write-Host "== $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "   OK  $msg" -ForegroundColor Green }
@@ -158,10 +164,19 @@ function Start-Elevated {
 # Usuario de escritorio que va a ejecutar el agente (no el admin del UAC).
 function Get-TargetUser {
   if ($env:ASTREA_USER) { return $env:ASTREA_USER }
-  try {
-    $u = (Get-CimInstance Win32_ComputerSystem).UserName
-    if ($u) { return $u }
-  } catch {}
+  $console = $null
+  try { $console = (Get-CimInstance Win32_ComputerSystem).UserName } catch {}
+  # El MSI corre como SYSTEM: nos pasa quien lo abrio ([LogonUser], sin dominio).
+  # Si coincide con el usuario de la consola, usamos este, que trae el dominio.
+  if ($env:ASTREA_MSI_USER) {
+    if ($console -and ($console -split '\\')[-1] -eq $env:ASTREA_MSI_USER) { return $console }
+    return $env:ASTREA_MSI_USER
+  }
+  if ($console) { return $console }
+  if ($env:USERNAME -like '*$') {
+    # Cuenta de equipo (SYSTEM): registrar las tareas con ella no serviria.
+    Fail "No encuentro el usuario de escritorio. Inicia sesion en la PC o pasa `$env:ASTREA_USER='EQUIPO\usuario'."
+  }
   return "$env:USERDOMAIN\$env:USERNAME"
 }
 
@@ -215,6 +230,11 @@ function Get-TailnetIP([string]$ts) {
 function Connect-Tailscale([string]$ts) {
   $ip = Get-TailnetIP $ts
   if ($ip) { return $ip }
+  if ($Msi -and -not $env:ASTREA_TS_AUTHKEY) {
+    # Como SYSTEM y sin ventana no hay navegador para iniciar sesion: el MSI se
+    # quedaria colgado esperando.
+    Fail "Tailscale no esta conectado. Abre Tailscale desde la bandeja del sistema, inicia sesion con la misma cuenta que tu PC principal y vuelve a abrir el MSI."
+  }
 
   Step "Conectando esta PC a tu tailnet"
   if ($env:ASTREA_TS_AUTHKEY) {
@@ -407,6 +427,47 @@ function Register-AgentTask([string]$user) {
   Ok "Tarea '$TaskName' (al encender, sin sesion) y '$GuiTask' (pantalla/mouse/teclado al iniciar sesion) registradas para $user"
 }
 
+# Por que una tarea no pudo lanzar el agente, a partir de su LastTaskResult
+# (HRESULT de CreateProcess). Devuelve $null si no es un bloqueo reconocido.
+function Get-TaskBlockReason([string]$task) {
+  $info = Get-ScheduledTaskInfo -TaskName $task -ErrorAction SilentlyContinue
+  if (-not $info) { return $null }
+  $code = [uint32]([int64]$info.LastTaskResult -band 0xFFFFFFFFL)
+  $hex = '0x{0:X8}' -f $code
+  # Se compara el texto: en PowerShell un literal 0x800711C7 es un int32
+  # negativo y nunca seria igual al codigo sin signo.
+  switch ($hex) {
+    '0x800711C7' {  # ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION (4551)
+      return ("Windows bloqueo astrea-agent.exe porque no esta firmado (${hex}: 'una directiva de Control de aplicaciones bloqueo este archivo'). " +
+              "Es Smart App Control o WDAC. Si la PC es tuya: Seguridad de Windows > Control de aplicaciones y navegador > Smart App Control > Desactivado " +
+              "(no se puede volver a activar sin reinstalar Windows). Si la PC esta gestionada (escuela/empresa): pide al administrador una regla WDAC " +
+              "por hash o publisher para $ExePath.")
+    }
+    '0x800700E1' {  # ERROR_VIRUS_INFECTED (225)
+      return "Windows Defender (u otro antivirus) bloqueo astrea-agent.exe como amenaza ($hex). Revisa Seguridad de Windows > Historial de proteccion, permitelo o anade la exclusion: Add-MpPreference -ExclusionPath '$InstallDir'."
+    }
+    '0x800700E2' {  # ERROR_VIRUS_DELETED (226)
+      return "El antivirus borro astrea-agent.exe ($hex). Restauralo desde Seguridad de Windows > Historial de proteccion, anade la exclusion Add-MpPreference -ExclusionPath '$InstallDir' y reinstala."
+    }
+    '0x800704EC' {  # ERROR_ACCESS_DISABLED_BY_POLICY (1260)
+      return "Una directiva de grupo (AppLocker / Restricciones de software) impide ejecutar programas desde $InstallDir ($hex). Pide al administrador que permita $ExePath."
+    }
+    '0x80070002' {  # ERROR_FILE_NOT_FOUND
+      return "La tarea no encuentra $ExePath ($hex): probablemente el antivirus lo borro. Revisa el Historial de proteccion y reinstala."
+    }
+  }
+  return $null
+}
+
+function Show-TaskBlockReasons {
+  $found = $false
+  foreach ($t in @($TaskName, $GuiTask)) {
+    $why = Get-TaskBlockReason $t
+    if ($why) { Warn "Tarea ${t}: $why"; $found = $true }
+  }
+  return $found
+}
+
 function Test-Agent([string]$ip) {
   Step "Comprobando que el agente responde"
   for ($i = 0; $i -lt 20; $i++) {
@@ -421,6 +482,7 @@ function Test-Agent([string]$ip) {
     Start-Sleep 1
   }
   Warn "El agente no responde en ${ip}:$Port."
+  if (Show-TaskBlockReasons) { return $false }
   if (-not (Get-Process -Name 'astrea-agent' -ErrorAction SilentlyContinue)) { Warn "El proceso astrea-agent no esta corriendo." }
   if (Test-Path $LogPath) {
     Write-Host "   Ultimas lineas de ${LogPath}:" -ForegroundColor Yellow
@@ -437,6 +499,7 @@ function Test-GuiHelper {
     } catch {}
     Start-Sleep 1
   }
+  if (Show-TaskBlockReasons) { return }
   Warn "El ayudante GUI no responde en 127.0.0.1:${GuiPort}: pantalla/mouse/teclado no estaran disponibles hasta el proximo inicio de sesion. Mira $(Join-Path $InstallDir 'agent-gui.log')."
 }
 
@@ -486,12 +549,23 @@ function Install-Astrea {
   $user = Get-TargetUser
   Write-Host "   Usuario de escritorio: $user"
 
-  Step "Tailscale"
-  $ts = Find-Tailscale
-  if (-not $ts) { $ts = Install-Tailscale }
-  Wait-TailscaleService
-  $ip = Connect-Tailscale $ts
-  Ok "IP del tailnet: $ip"
+  if ($env:ASTREA_ADDR) {
+    $ip = $env:ASTREA_ADDR
+    Warn "ASTREA_ADDR=${ip}: sin Tailscale. El agente escucha en esa IP; la regla de firewall solo admite el tailnet (100.64.0.0/10), amplia la regla si lo usas en una LAN."
+  } else {
+    Step "Tailscale"
+    $ts = Find-Tailscale
+    if (-not $ts) {
+      if ($Msi) {
+        # Windows no permite lanzar el MSI de Tailscale dentro de otro MSI (1618).
+        Fail "Tailscale no esta instalado. Instalalo desde https://tailscale.com/download, inicia sesion y vuelve a abrir el MSI de Astrea."
+      }
+      $ts = Install-Tailscale
+    }
+    Wait-TailscaleService
+    $ip = Connect-Tailscale $ts
+    Ok "IP del tailnet: $ip"
+  }
 
   Install-AgentBinary
   $token = Write-AgentConfig $ip
@@ -500,10 +574,26 @@ function Install-Astrea {
   $alive = Test-Agent $ip
   Write-Summary $ip $token
   Set-Permissions $user
-  if (-not $alive) { Fail "Instalado, pero el agente no responde. Revisa el log de arriba." }
+  if (-not $alive) {
+    # En el MSI, fallar aqui haria rollback de los archivos dejando las tareas
+    # apuntando a un exe borrado. Mejor dejarlo instalado y avisar.
+    if ($Msi) { Warn "Instalado, pero el agente no responde todavia. Mira $LogPath y docs/TROUBLESHOOTING.md."; return }
+    Fail "Instalado, pero el agente no responde. Revisa el log de arriba."
+  }
 }
 
 $failed = $false
+$transcript = $false
+if ($Msi) {
+  # Sin consola: todo lo que imprime el instalador va a un log. Al desinstalar
+  # va a TEMP, porque la carpeta de Astrea se borra.
+  $msiLog = if ($env:ASTREA_UNINSTALL -eq '1') { Join-Path $env:TEMP 'astrea-uninstall.log' } else { Join-Path $InstallDir 'install.log' }
+  try {
+    New-Item -ItemType Directory -Force -Path (Split-Path $msiLog) | Out-Null
+    Start-Transcript -Path $msiLog -Force | Out-Null
+    $transcript = $true
+  } catch {}
+}
 try {
   Install-Astrea
 } catch {
@@ -511,10 +601,11 @@ try {
   Write-Host ""
   Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
 } finally {
-  if ($Elevated) {
+  if ($Elevated -and -not $Msi) {
     Write-Host ""
     Read-Host "Pulsa Enter para cerrar esta ventana" | Out-Null
   }
+  if ($transcript) { try { Stop-Transcript | Out-Null } catch {} }
 }
-if ($Elevated) { exit ([int]$failed) }
+if ($Elevated -or $Msi) { exit ([int]$failed) }
 }
