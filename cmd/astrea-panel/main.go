@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,10 +48,14 @@ type panelConfig struct {
 }
 
 type machineStatus struct {
-	Name   string          `json:"name"`
-	Online bool            `json:"online"`
-	Error  string          `json:"error,omitempty"`
-	Stats  json.RawMessage `json:"stats,omitempty"`
+	Name     string          `json:"name"`
+	Base     string          `json:"base,omitempty"` // http://host:port del agente (para enlazar /dyn)
+	Online   bool            `json:"online"`
+	Error    string          `json:"error,omitempty"`
+	Stats    json.RawMessage `json:"stats,omitempty"`
+	Idle     json.RawMessage `json:"idle,omitempty"`     // sys.idle: quién usa la PC
+	Services json.RawMessage `json:"services,omitempty"` // service.status: servicios/modelos
+	Admin    json.RawMessage `json:"admin,omitempty"`    // admin.status: os, modo, kill switch
 }
 
 type panel struct {
@@ -84,6 +90,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(static)))
 	mux.HandleFunc("/api/stats", p.handleStats)
+	mux.HandleFunc("/api/screenshot", p.handleScreenshot)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
@@ -154,7 +161,7 @@ func (p *panel) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *panel) poll(ctx context.Context, m Machine) machineStatus {
-	st := machineStatus{Name: m.Name}
+	st := machineStatus{Name: m.Name, Base: baseURL(m.WS)}
 	p.mu.Lock()
 	client := p.clients[m.WS]
 	p.mu.Unlock()
@@ -164,14 +171,72 @@ func (p *panel) poll(ctx context.Context, m Machine) machineStatus {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	res, err := client.Call(ctx, "sys.stats", map[string]any{})
+	// admin.status is cheap and always present: it confirms the agent is alive.
+	admin, err := client.Call(ctx, "admin.status", map[string]any{})
 	if err != nil {
 		st.Error = err.Error()
 		return st
 	}
 	st.Online = true
-	st.Stats = res.Result
+	st.Admin = admin.Result
+	// The rest in parallel; a missing/failed capability is not fatal.
+	var wg sync.WaitGroup
+	get := func(method string, dst *json.RawMessage) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r, e := client.Call(ctx, method, map[string]any{}); e == nil {
+				*dst = r.Result
+			}
+		}()
+	}
+	get("sys.stats", &st.Stats)
+	get("sys.idle", &st.Idle)
+	get("service.status", &st.Services)
+	wg.Wait()
 	return st
+}
+
+// handleScreenshot proxies a live screen capture of one machine as a JPEG.
+func (p *panel) handleScreenshot(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("machine")
+	p.mu.Lock()
+	var client *transport.ReconnectingClient
+	for _, m := range p.machines {
+		if m.Name == name {
+			client = p.clients[m.WS]
+		}
+	}
+	p.mu.Unlock()
+	if client == nil {
+		http.Error(w, "máquina desconocida", http.StatusNotFound)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	res, err := client.Call(ctx, "screen.capture", map[string]any{"max_width": 1280, "format": "jpeg", "quality": 70})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	var out struct {
+		Images []struct {
+			MimeType string `json:"mime_type"`
+			Data     string `json:"data"`
+		} `json:"images"`
+	}
+	if json.Unmarshal(res.Result, &out) != nil || len(out.Images) == 0 {
+		http.Error(w, "esta PC no devolvió imagen (¿sin escritorio/sesión?)", http.StatusBadGateway)
+		return
+	}
+	data, err := base64.StdEncoding.DecodeString(out.Images[0].Data)
+	if err != nil {
+		http.Error(w, "imagen inválida", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", out.Images[0].MimeType)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }
 
 func defaultConfigPath() string {
@@ -193,4 +258,17 @@ func openBrowser(url string) {
 		cmd = exec.Command("xdg-open", url)
 	}
 	_ = cmd.Start()
+}
+
+// baseURL maps ws://host:port/ws -> http://host:port so the browser can link
+// to the agent's /dyn endpoints (the token never goes to the browser).
+func baseURL(ws string) string {
+	u, err := url.Parse(ws)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	if u.Scheme == "wss" {
+		return "https://" + u.Host
+	}
+	return "http://" + u.Host
 }
