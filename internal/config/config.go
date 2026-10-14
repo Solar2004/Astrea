@@ -28,7 +28,7 @@ type Config struct {
 	// (files, stats, screen, logs). Allow/Deny refine either one.
 	Mode string `json:"mode,omitempty"`
 	// KeepAwake is the sleep inhibitor mode: "auto" (default; awake while a
-	// service or job runs), "always" or "off".
+	// service, job or download runs), "always" or "off".
 	KeepAwake string `json:"keep_awake,omitempty"`
 }
 
