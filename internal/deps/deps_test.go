@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestLookup(t *testing.T) {
@@ -97,5 +98,23 @@ func TestScanLinesCR(t *testing.T) {
 	}
 	if len(got) != 3 || got[0] != "a" || got[1] != "b" || got[2] != "c" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRunDoesNotHangOnBackgroundChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	var lines []string
+	start := time.Now()
+	err := run(context.Background(), []string{"sh", "-c", "sleep 30 & echo hola"}, func(_, l string) { lines = append(lines, l) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("run waited for the background child")
+	}
+	if len(lines) < 2 || lines[1] != "hola\n" {
+		t.Fatalf("output lost: %q", lines)
 	}
 }

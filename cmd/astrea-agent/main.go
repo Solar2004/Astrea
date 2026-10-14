@@ -21,6 +21,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/auth"
 	"github.com/Solar2004/Astrea/internal/capability"
 	"github.com/Solar2004/Astrea/internal/config"
+	"github.com/Solar2004/Astrea/internal/download"
 	"github.com/Solar2004/Astrea/internal/endpoint"
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
@@ -182,6 +183,11 @@ func main() {
 	reg.Register(capability.ServiceStatus{Svcs: svcs})
 	reg.Register(capability.ServiceLogs{Svcs: svcs})
 	go svcs.StartAll()
+	downloads := download.NewManager()
+	defer downloads.StopAll()
+	reg.Register(capability.NetDownload{Mgr: downloads})
+	reg.Register(capability.NetDownloadStatus{Mgr: downloads})
+	reg.Register(capability.NetDownloadCancel{Mgr: downloads})
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
 	reg.Register(capability.AdminStatus{Guard: guard})
