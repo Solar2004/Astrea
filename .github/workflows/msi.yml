@@ -65,7 +65,7 @@ jobs:
 
           "== install 0.0.1"
           Msi '/i' 'dist/astrea-0.0.1.msi' install1.log @('ASTREA_ADDR=127.0.0.1')
-          Get-Content "$dir\install.log" -Tail 25
+          Get-Content "$dir\install.log"
           foreach ($t in 'AstreaAgent', 'AstreaAgentGUI') {
             $task = Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
             if (-not $task) { throw "task $t missing" }
@@ -92,11 +92,19 @@ jobs:
           if (Test-Path "$dir\astrea-agent.exe") { throw 'exe left behind' }
           "MSI OK: install, upgrade (token kept), uninstall"
 
+      - name: Collect logs
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force logs | Out-Null
+          Copy-Item *.log logs -ErrorAction SilentlyContinue
+          Copy-Item C:\ProgramData\Astrea\*.log logs -ErrorAction SilentlyContinue
+          Copy-Item "$env:TEMP\astrea-uninstall.log" logs -ErrorAction SilentlyContinue
+          Copy-Item C:\Windows\Temp\astrea-uninstall.log logs -ErrorAction SilentlyContinue
+
       - name: Upload MSI logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: msi-logs
-          path: |
-            *.log
-            C:\ProgramData\Astrea\*.log
+          path: logs
