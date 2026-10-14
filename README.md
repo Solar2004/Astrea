@@ -64,8 +64,28 @@ curl -fsSL https://raw.githubusercontent.com/Solar2004/Astrea/main/scripts/insta
 curl -fsSL https://raw.githubusercontent.com/Solar2004/Astrea/main/scripts/install.sh | bash -s hub
 ```
 
-Luego pega el bloque que te dio el instalador en `~/.hermes/config.yaml` bajo
-`mcp_servers` y reinicia Hermes. Aparecerán las herramientas `astrea.*`.
+Instala y conecta Tailscale si falta, baja el **hub** y el **panel**, deja el
+panel corriendo solo en `http://127.0.0.1:7780` y crea `~/.config/astrea/`.
+
+Registra cada PC que instales (con la IP y el token que te dio su instalador):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Solar2004/Astrea/main/scripts/install.sh | bash -s add-machine pc-cuarto 100.x.y.z <TOKEN>
+```
+
+Y engancha el hub a Hermes una vez — en `~/.hermes/config.yaml` (o tu perfil),
+bajo `mcp_servers`:
+
+```yaml
+  astrea:
+    command: /home/TU_USUARIO/.local/bin/astrea-hub
+    args: ["--config", "/home/TU_USUARIO/.config/astrea/machines.json"]
+    enabled: true
+```
+
+Reinicia Hermes: aparecen las herramientas `astrea.*`. Con varias PCs, cada una
+gana un argumento `machine` y `astrea.fleet.status` las resume (ver
+[`docs/FLEET.md`](docs/FLEET.md)).
 
 ## Desde el código
 

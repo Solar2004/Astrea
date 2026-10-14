@@ -38,6 +38,35 @@ curl.exe http://127.0.0.1:7700/healthz          # debe decir: ok
 Get-Content "$env:ProgramData\Astrea\agent.log" -Tail 50 -Wait
 ```
 
+## El agente no arranca: Windows bloquea el .exe sin firmar
+
+En un PC con **Smart App Control** o **WDAC/AppLocker** (habitual en Windows 11
+nuevos y en PCs gestionados de empresa/aula), Windows no deja ejecutar un
+binario sin firma reconocida. Síntoma: tareas registradas pero el agente nunca
+corre, `agent.log` vacío, `healthz` sin respuesta. El instalador detecta el
+`LastTaskResult` de la tarea y lo explica; la correspondencia:
+
+| LastTaskResult | Causa | Qué hacer |
+|----------------|-------|-----------|
+| `0x800711C7` | Smart App Control / WDAC | Si la PC es tuya: apaga Smart App Control (abajo). Si está gestionada: pide al admin una regla WDAC por **publisher** o **hash**, o firma el binario. |
+| `0x800700E1` / `0x800700E2` | Antivirus lo bloqueó/borró | Restaura el exe y excluye `C:\ProgramData\Astrea\`: `Add-MpPreference -ExclusionPath 'C:\ProgramData\Astrea'`. |
+| `0x800704EC` | AppLocker / SRP | Regla de AppLocker del administrador. |
+| `0x80070002` | El exe ya no existe | Reinstala. |
+
+Comprobar Smart App Control (0=off, 1=ON, 2=evaluación):
+
+```powershell
+(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name VerifiedAndReputablePolicyState).VerifiedAndReputablePolicyState
+```
+
+**Apagar Smart App Control** (solo si la PC es tuya; es irreversible sin
+restablecer Windows): `Start-Process "windowsdefender://appbrowser"` →
+*Smart App Control* → *Desactivado*. Luego `Start-ScheduledTask AstreaAgent`.
+
+Si la PC está gestionada por una organización (`dsregcmd /status` muestra
+`DomainJoined`/`MDMUrl`), lo normal es que no puedas tocar estas políticas: la
+única vía es firmar el agente con un certificado que el admin acepte.
+
 ## Síntomas típicos
 
 - **El agente no arranca al encender / tras reiniciar.** Mira `agent.log`. Si
