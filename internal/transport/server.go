@@ -64,7 +64,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.CloseNow()
 	// No read deadline: this is a long-lived control channel.
-	conn := &conn{ws: c, srv: s, ctx: r.Context()}
+	conn := &conn{ws: c, srv: s, ctx: r.Context(), inflight: map[string]context.CancelFunc{}}
 	conn.serve()
 }
 
@@ -74,6 +74,9 @@ type conn struct {
 	srv     *Server
 	ctx     context.Context
 	writeMu sync.Mutex
+
+	mu       sync.Mutex
+	inflight map[string]context.CancelFunc // request ID -> cancel
 }
 
 func (c *conn) serve() {
@@ -86,29 +89,48 @@ func (c *conn) serve() {
 		if err := json.Unmarshal(data, &f); err != nil {
 			continue
 		}
-		if f.Type != protocol.FrameRequest {
-			continue
+		switch f.Type {
+		case protocol.FrameRequest:
+			// Each request runs in its own goroutine so long/streaming calls
+			// do not block the read loop for other requests.
+			ctx, cancel := context.WithCancel(c.ctx)
+			c.mu.Lock()
+			c.inflight[f.ID] = cancel
+			c.mu.Unlock()
+			go func() {
+				defer func() {
+					c.mu.Lock()
+					delete(c.inflight, f.ID)
+					c.mu.Unlock()
+					cancel()
+				}()
+				c.handle(ctx, f)
+			}()
+		case protocol.FrameCancel:
+			c.mu.Lock()
+			cancel := c.inflight[f.ID]
+			c.mu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
 		}
-		// Each request runs in its own goroutine so long/streaming calls do
-		// not block the read loop for other requests.
-		go c.handle(f)
 	}
 }
 
-func (c *conn) handle(f protocol.Frame) {
+func (c *conn) handle(ctx context.Context, f protocol.Frame) {
 	emit := func(chunk protocol.StreamChunk) {
 		c.send(protocol.Frame{Type: protocol.FrameStream, ID: f.ID, Stream: &chunk})
 	}
 	// Authorization guard (allow/deny lists + kill switch) runs before dispatch.
 	if c.srv.Guard != nil {
 		if err := c.srv.Guard.Check(f.Method); err != nil {
-			c.srv.Audit.Log(f.Method, err)
+			c.srv.Audit.Log(f.Method, f.Payload, err)
 			c.send(protocol.Frame{Type: protocol.FrameError, ID: f.ID, Error: err.(*protocol.Error)})
 			return
 		}
 	}
-	result, err := c.srv.Registry.Dispatch(c.ctx, f.Method, f.Payload, emit)
-	c.srv.Audit.Log(f.Method, err)
+	result, err := c.srv.Registry.Dispatch(ctx, f.Method, f.Payload, emit)
+	c.srv.Audit.Log(f.Method, f.Payload, err)
 	if err != nil {
 		pe, ok := err.(*protocol.Error)
 		if !ok {

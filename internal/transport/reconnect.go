@@ -2,7 +2,7 @@ package transport
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"sync"
 	"time"
 )
@@ -28,10 +28,14 @@ func NewReconnecting(wsURL, token string) *ReconnectingClient {
 // expires.
 func (rc *ReconnectingClient) connect(ctx context.Context) (*Client, error) {
 	rc.mu.Lock()
-	if rc.cur != nil {
+	if rc.cur != nil && rc.cur.Alive() {
 		c := rc.cur
 		rc.mu.Unlock()
 		return c, nil
+	}
+	if rc.cur != nil {
+		rc.cur.Close()
+		rc.cur = nil
 	}
 	rc.mu.Unlock()
 
@@ -65,33 +69,23 @@ func (rc *ReconnectingClient) drop(c *Client) {
 	}
 }
 
-// Call invokes a capability, reconnecting once if the live connection is dead.
+// Call invokes a capability. It redials and retries once only when the request
+// never reached the agent; a connection lost mid-call is reported, not retried,
+// because the capability (exec, fs.write, proc.kill…) may already have run.
 func (rc *ReconnectingClient) Call(ctx context.Context, method string, payload any) (*CallResult, error) {
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; ; attempt++ {
 		c, err := rc.connect(ctx)
 		if err != nil {
 			return nil, err
 		}
 		res, err := c.Call(ctx, method, payload)
-		if err != nil && isConnErr(err) {
+		switch {
+		case errors.Is(err, ErrNotSent) && attempt == 0:
 			rc.drop(c)
-			continue // redial and retry once
+			continue
+		case errors.Is(err, ErrNotSent), errors.Is(err, ErrConnLost):
+			rc.drop(c)
 		}
 		return res, err
 	}
-	return nil, context.Canceled
-}
-
-// isConnErr reports whether err looks like a lost connection (worth redialing).
-func isConnErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	for _, s := range []string{"connection lost", "use of closed", "broken pipe", "EOF", "reset by peer"} {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
 }

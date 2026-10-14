@@ -22,6 +22,9 @@ const (
 	FrameResult FrameType = "result"
 	// FrameError: agent -> hub. Terminal failure for a request.
 	FrameError FrameType = "error"
+	// FrameCancel: hub -> agent. Abort the in-flight request with this ID
+	// (the hub gave up waiting). The agent still answers with an error frame.
+	FrameCancel FrameType = "cancel"
 )
 
 // Frame is the single envelope exchanged over the control channel. Exactly one

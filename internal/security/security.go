@@ -97,16 +97,27 @@ func NewAudit(path string) (*Audit, error) {
 type Entry struct {
 	Time   string `json:"time"`
 	Method string `json:"method"`
+	Args   string `json:"args,omitempty"`
 	OK     bool   `json:"ok"`
 	Err    string `json:"err,omitempty"`
 }
 
-// Log records an invocation. No-op if a is nil.
-func (a *Audit) Log(method string, err error) {
+// maxAuditArgs bounds the arguments recorded per entry (fs.write payloads can
+// be megabytes of base64).
+const maxAuditArgs = 2 << 10
+
+// Log records an invocation and its (truncated) arguments. No-op if a is nil.
+func (a *Audit) Log(method string, args json.RawMessage, err error) {
 	if a == nil {
 		return
 	}
 	e := Entry{Time: time.Now().UTC().Format(time.RFC3339), Method: method, OK: err == nil}
+	if s := string(args); s != "" && s != "null" && s != "{}" {
+		if len(s) > maxAuditArgs {
+			s = s[:maxAuditArgs] + "…"
+		}
+		e.Args = s
+	}
 	if err != nil {
 		e.Err = err.Error()
 	}
