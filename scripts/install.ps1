@@ -427,6 +427,47 @@ function Register-AgentTask([string]$user) {
   Ok "Tarea '$TaskName' (al encender, sin sesion) y '$GuiTask' (pantalla/mouse/teclado al iniciar sesion) registradas para $user"
 }
 
+# Por que una tarea no pudo lanzar el agente, a partir de su LastTaskResult
+# (HRESULT de CreateProcess). Devuelve $null si no es un bloqueo reconocido.
+function Get-TaskBlockReason([string]$task) {
+  $info = Get-ScheduledTaskInfo -TaskName $task -ErrorAction SilentlyContinue
+  if (-not $info) { return $null }
+  $code = [uint32]([int64]$info.LastTaskResult -band 0xFFFFFFFFL)
+  $hex = '0x{0:X8}' -f $code
+  # Se compara el texto: en PowerShell un literal 0x800711C7 es un int32
+  # negativo y nunca seria igual al codigo sin signo.
+  switch ($hex) {
+    '0x800711C7' {  # ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION (4551)
+      return ("Windows bloqueo astrea-agent.exe porque no esta firmado (${hex}: 'una directiva de Control de aplicaciones bloqueo este archivo'). " +
+              "Es Smart App Control o WDAC. Si la PC es tuya: Seguridad de Windows > Control de aplicaciones y navegador > Smart App Control > Desactivado " +
+              "(no se puede volver a activar sin reinstalar Windows). Si la PC esta gestionada (escuela/empresa): pide al administrador una regla WDAC " +
+              "por hash o publisher para $ExePath.")
+    }
+    '0x800700E1' {  # ERROR_VIRUS_INFECTED (225)
+      return "Windows Defender (u otro antivirus) bloqueo astrea-agent.exe como amenaza ($hex). Revisa Seguridad de Windows > Historial de proteccion, permitelo o anade la exclusion: Add-MpPreference -ExclusionPath '$InstallDir'."
+    }
+    '0x800700E2' {  # ERROR_VIRUS_DELETED (226)
+      return "El antivirus borro astrea-agent.exe ($hex). Restauralo desde Seguridad de Windows > Historial de proteccion, anade la exclusion Add-MpPreference -ExclusionPath '$InstallDir' y reinstala."
+    }
+    '0x800704EC' {  # ERROR_ACCESS_DISABLED_BY_POLICY (1260)
+      return "Una directiva de grupo (AppLocker / Restricciones de software) impide ejecutar programas desde $InstallDir ($hex). Pide al administrador que permita $ExePath."
+    }
+    '0x80070002' {  # ERROR_FILE_NOT_FOUND
+      return "La tarea no encuentra $ExePath ($hex): probablemente el antivirus lo borro. Revisa el Historial de proteccion y reinstala."
+    }
+  }
+  return $null
+}
+
+function Show-TaskBlockReasons {
+  $found = $false
+  foreach ($t in @($TaskName, $GuiTask)) {
+    $why = Get-TaskBlockReason $t
+    if ($why) { Warn "Tarea ${t}: $why"; $found = $true }
+  }
+  return $found
+}
+
 function Test-Agent([string]$ip) {
   Step "Comprobando que el agente responde"
   for ($i = 0; $i -lt 20; $i++) {
@@ -441,6 +482,7 @@ function Test-Agent([string]$ip) {
     Start-Sleep 1
   }
   Warn "El agente no responde en ${ip}:$Port."
+  if (Show-TaskBlockReasons) { return $false }
   if (-not (Get-Process -Name 'astrea-agent' -ErrorAction SilentlyContinue)) { Warn "El proceso astrea-agent no esta corriendo." }
   if (Test-Path $LogPath) {
     Write-Host "   Ultimas lineas de ${LogPath}:" -ForegroundColor Yellow
@@ -457,6 +499,7 @@ function Test-GuiHelper {
     } catch {}
     Start-Sleep 1
   }
+  if (Show-TaskBlockReasons) { return }
   Warn "El ayudante GUI no responde en 127.0.0.1:${GuiPort}: pantalla/mouse/teclado no estaran disponibles hasta el proximo inicio de sesion. Mira $(Join-Path $InstallDir 'agent-gui.log')."
 }
 
