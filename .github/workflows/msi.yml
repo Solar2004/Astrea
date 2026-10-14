@@ -1,0 +1,102 @@
+# Compila el MSI y lo instala DE VERDAD en un Windows limpio en cada cambio del
+# empaquetado o del instalador. La 0.2.0 salio rota (WixQuietExec64 0x80070057,
+# 1603 siempre) porque el MSI solo se construia al publicar un tag y nadie lo
+# habia instalado antes.
+#
+# Instala sin Tailscale (ASTREA_ADDR=127.0.0.1) y comprueba: instalacion
+# silenciosa, tareas, healthz, actualizacion conservando el token y
+# desinstalacion completa.
+name: msi
+
+on:
+  push:
+    branches: [main]
+    paths: ['packaging/**', 'scripts/install.ps1', 'cmd/astrea-agent/**', '.github/workflows/msi.yml']
+  pull_request:
+    paths: ['packaging/**', 'scripts/install.ps1', 'cmd/astrea-agent/**', '.github/workflows/msi.yml']
+  workflow_dispatch:
+
+jobs:
+  msi-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Build agent and two MSI versions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CGO_ENABLED = '0'
+          go build -ldflags "-s -w -X main.version=ci -H windowsgui" -o dist/astrea-agent.exe ./cmd/astrea-agent
+          dotnet tool install --global wix --version 4.0.5
+          wix extension add -g WixToolset.Util.wixext/4.0.5
+          foreach ($v in '0.0.1', '0.0.2') {
+            wix build packaging/wix/astrea.wxs -arch x64 -ext WixToolset.Util.wixext `
+              -d Version="$v" -d AgentExe="dist/astrea-agent.exe" -d InstallPs1="scripts/install.ps1" `
+              -o "dist/astrea-$v.msi"
+            if ($LASTEXITCODE) { throw "wix build $v failed" }
+          }
+
+      - name: Install, upgrade, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = 'C:\ProgramData\Astrea'
+          function Msi([string]$verb, [string]$file, [string]$log, [string[]]$props) {
+            $argv = @($verb, (Resolve-Path $file).Path, '/qn', '/norestart', '/l*v', $log) + $props
+            $p = Start-Process msiexec.exe -ArgumentList $argv -Wait -PassThru
+            if ($p.ExitCode -ne 0) {
+              Get-Content $log | Select-String -Pattern 'WixQuietExec|CustomAction|Return value 3|ERROR' | Select-Object -Last 60 | ForEach-Object { $_.Line }
+              if (Test-Path "$dir\install.log") { Get-Content "$dir\install.log" -Tail 40 }
+              throw "msiexec $verb $file exited $($p.ExitCode)"
+            }
+          }
+          function Healthz {
+            for ($i = 0; $i -lt 30; $i++) {
+              try { if ((Invoke-WebRequest http://127.0.0.1:7700/healthz -UseBasicParsing -TimeoutSec 2).Content -match 'ok') { return } } catch {}
+              Start-Sleep 1
+            }
+            Get-Content "$dir\agent.log" -Tail 30 -ErrorAction SilentlyContinue
+            throw 'agent does not answer /healthz'
+          }
+
+          "== install 0.0.1"
+          Msi '/i' 'dist/astrea-0.0.1.msi' install1.log @('ASTREA_ADDR=127.0.0.1')
+          Get-Content "$dir\install.log" -Tail 25
+          foreach ($t in 'AstreaAgent', 'AstreaAgentGUI') {
+            $task = Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
+            if (-not $task) { throw "task $t missing" }
+            "$t : $($task.Principal.LogonType) $($task.Principal.RunLevel) $($task.State)"
+          }
+          Healthz
+          $token1 = (Get-Content -Raw "$dir\config.json" | ConvertFrom-Json).token
+          if (-not $token1) { throw 'no token in config' }
+
+          "== upgrade to 0.0.2 (must keep the token)"
+          Msi '/i' 'dist/astrea-0.0.2.msi' install2.log @('ASTREA_ADDR=127.0.0.1')
+          Healthz
+          $token2 = (Get-Content -Raw "$dir\config.json" | ConvertFrom-Json).token
+          if ($token1 -ne $token2) { throw 'upgrade changed the token: the hub would stop working' }
+          $products = Get-CimInstance Win32_Product -Filter "Name='Astrea Agent'"
+          if (@($products).Count -ne 1 -or $products.Version -ne '0.0.2') { throw "expected exactly Astrea 0.0.2 installed, got: $($products | ForEach-Object Version)" }
+
+          "== uninstall"
+          Msi '/x' 'dist/astrea-0.0.2.msi' uninstall.log @()
+          foreach ($t in 'AstreaAgent', 'AstreaAgentGUI') {
+            if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) { throw "task $t left behind" }
+          }
+          if (Get-Process -Name astrea-agent -ErrorAction SilentlyContinue) { throw 'agent still running after uninstall' }
+          if (Test-Path "$dir\astrea-agent.exe") { throw 'exe left behind' }
+          "MSI OK: install, upgrade (token kept), uninstall"
+
+      - name: Upload MSI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi-logs
+          path: |
+            *.log
+            C:\ProgramData\Astrea\*.log
