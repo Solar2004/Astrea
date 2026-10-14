@@ -31,16 +31,26 @@ PC a controlar, con la **misma cuenta**. Anota la IP `100.x.y.z` de cada una.
 
 ### 1. PC a controlar
 
-**Windows** (un comando, en PowerShell como administrador):
+**Windows — opción A, instalador MSI** (doble clic): descarga
+`astrea-agent.msi` desde la [última release](https://github.com/Solar2004/Astrea/releases/latest)
+y ábrelo. Hace todo lo de abajo y deja el bloque de config del hub en
+`C:\ProgramData\Astrea\hub-config.txt`.
+
+**Windows — opción B, un comando** (PowerShell como administrador):
 
 ```powershell
 irm https://raw.githubusercontent.com/Solar2004/Astrea/main/scripts/install.ps1 | iex
 ```
 
-Descarga el agente, escribe la config con un token nuevo, lo registra para
-arrancar **al encender la PC, aunque nadie inicie sesión** (los modelos vuelven
-solos tras un reinicio; pantalla/mouse/teclado se activan al iniciar sesión, ver
-[`docs/HEADLESS.md`](docs/HEADLESS.md)), y te imprime el bloque de config para el hub.
+Cualquiera de las dos descarga el agente, escribe la config con un token nuevo,
+lo registra para arrancar **al encender la PC, aunque nadie inicie sesión** (los
+modelos vuelven solos tras un reinicio; pantalla/mouse/teclado se activan al
+iniciar sesión, ver [`docs/HEADLESS.md`](docs/HEADLESS.md)), y deja el bloque de
+config para el hub.
+
+> ¿Algo falla? Ejecuta
+> `& "$env:ProgramData\Astrea\astrea-agent.exe" --diagnose` y pásame la salida
+> (no incluye el token). Detalle en [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 **Linux**:
 

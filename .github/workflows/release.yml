@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  release-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,57 @@ jobs:
           cp scripts/install.sh  dist/install.sh
           (cd dist && sha256sum * > SHA256SUMS.txt)
 
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  msi:
+    needs: release-build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Build MSI with WiX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = "${env:GITHUB_REF_NAME}" -replace '^v',''
+          dotnet tool install --global wix --version 4.0.5
+          wix extension add -g WixToolset.Util.wixext/4.0.5
+          wix build packaging/wix/astrea.wxs `
+            -arch x64 `
+            -ext WixToolset.Util.wixext `
+            -d Version="$version" `
+            -d AgentExe="dist/astrea-agent.exe" `
+            -d InstallPs1="scripts/install.ps1" `
+            -o "dist/astrea-agent-$version-x64.msi"
+          Copy-Item "dist/astrea-agent-$version-x64.msi" "dist/astrea-agent.msi"
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi
+          path: dist/*.msi
+
+  publish:
+    needs: [release-build, msi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: msi
+          path: dist
+      - name: Refresh checksums (include MSI)
+        run: (cd dist && rm -f SHA256SUMS.txt && sha256sum * > SHA256SUMS.txt)
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

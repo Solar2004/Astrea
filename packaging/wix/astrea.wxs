@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI de Astrea para Windows. Empaqueta astrea-agent.exe + install.ps1 y, al
+  instalar, ejecuta install.ps1 (que registra las tareas, el firewall y la
+  config con su token). Al desinstalar corre install.ps1 en modo uninstall.
+  Toda la logica vive en install.ps1 para no duplicarla en WiX.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Astrea Agent"
+           Manufacturer="Astrea"
+           Version="$(var.Version)"
+           UpgradeCode="4F87E493-748F-45E2-B5E5-05C0868DC75A"
+           Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="Ya hay una version mas reciente de Astrea instalada." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ProgramData\Astrea: aqui viven exe, config, logs (igual que install.ps1). -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="INSTALLDIR" Name="Astrea" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="Payload" Directory="INSTALLDIR">
+      <Component Id="AgentExe" Guid="*">
+        <File Id="AgentExe" Source="$(var.AgentExe)" KeyPath="yes" Name="astrea-agent.exe" />
+      </Component>
+      <Component Id="InstallPs1" Guid="*">
+        <File Id="InstallPs1" Source="$(var.InstallPs1)" KeyPath="yes" Name="install.ps1" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Astrea Agent" Level="1">
+      <ComponentGroupRef Id="Payload" />
+    </Feature>
+
+    <!--
+      install.ps1 lee su configuracion de variables de entorno; las fijamos
+      inline en el comando de PowerShell. SetProperty (inmediato) resuelve
+      [INSTALLDIR]; WixQuietExec64 (deferred, SYSTEM) lee la propiedad del
+      mismo nombre que su Id como linea de comando.
+    -->
+    <SetProperty Id="RunInstall" Before="RunInstall" Sequence="execute"
+      Value="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp;{ $env:ASTREA_LOCAL_EXE='[INSTALLDIR]astrea-agent.exe'; $env:ASTREA_ELEVATED='1'; &amp; '[INSTALLDIR]install.ps1' }&quot;" />
+    <CustomAction Id="RunInstall" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="check" />
+
+    <SetProperty Id="RunUninstall" Before="RunUninstall" Sequence="execute"
+      Value="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp;{ $env:ASTREA_UNINSTALL='1'; $env:ASTREA_ELEVATED='1'; &amp; '[INSTALLDIR]install.ps1' }&quot;" />
+    <CustomAction Id="RunUninstall" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RunInstall" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="RunUninstall" Before="RemoveFiles" Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

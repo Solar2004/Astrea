@@ -31,6 +31,7 @@
     $env:ASTREA_HEADLESS=0  -> sin modo headless: el agente solo corre con la sesion iniciada
     $env:ASTREA_GUI_PORT    -> puerto local (127.0.0.1) del ayudante GUI (default 7701)
     $env:ASTREA_UNINSTALL=1 -> desinstala el agente
+    $env:ASTREA_LOCAL_EXE   -> ruta a un astrea-agent.exe ya presente (lo usa el MSI; no descarga)
 #>
 
 & {
@@ -244,6 +245,18 @@ function Stop-Agent {
 }
 
 function Install-AgentBinary {
+  # Si el MSI (o el usuario) ya dejó el binario, úsalo sin descargar nada.
+  if ($env:ASTREA_LOCAL_EXE -and (Test-Path $env:ASTREA_LOCAL_EXE)) {
+    Step "Usando el agente incluido"
+    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+    Stop-Agent
+    if ((Resolve-Path $env:ASTREA_LOCAL_EXE).Path -ne (Join-Path $InstallDir 'astrea-agent.exe')) {
+      Copy-Item -Path $env:ASTREA_LOCAL_EXE -Destination $ExePath -Force
+    }
+    Unblock-File -Path $ExePath -ErrorAction SilentlyContinue
+    Ok "Agente en $ExePath"
+    return
+  }
   Step "Descargando el agente"
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   $tmp = Join-Path $env:TEMP 'astrea-agent.exe.download'

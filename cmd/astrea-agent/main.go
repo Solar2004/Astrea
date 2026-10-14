@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -79,7 +81,17 @@ func main() {
 		"headless: started at boot without a desktop session; GUI capabilities are forwarded to the gui helper. "+
 		"gui: helper inside the user's desktop session, serving only GUI capabilities on --gui-addr")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:7701", "loopback address where the gui helper listens (roles headless and gui)")
+	showVersion := flag.Bool("version", false, "print version and exit")
+	diagnose := flag.Bool("diagnose", false, "print a diagnostic report (version, config without token, recent logs) and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("astrea-agent %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+		return
+	}
+	if *diagnose {
+		runDiagnose(*cfgPath)
+		return
+	}
 	switch *role {
 	case roleFull, roleHeadless, roleGUI:
 	default:
@@ -102,6 +114,15 @@ func main() {
 			logger.SetOutput(io.MultiWriter(f, os.Stderr))
 		}
 	}
+	// A crash in a background-launched Windows task is otherwise silent; make
+	// sure the panic and stack reach the log the user will send us.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Printf("FATAL panic: %v\n%s", r, debug.Stack())
+			os.Exit(2)
+		}
+	}()
+	logger.Printf("astrea-agent %s %s/%s starting (role %s, config %s)", version, runtime.GOOS, runtime.GOARCH, *role, *cfgPath)
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
