@@ -15,12 +15,10 @@
 package task
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,17 +311,15 @@ func (m *Manager) runScript(ctx context.Context, s *Spec, params map[string]any,
 	for k, v := range params {
 		cmd.Env = append(cmd.Env, "ASTREA_ARG_"+envName(k)+"="+scalar(v))
 	}
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	flush := procutil.StreamOutput(cmd, emit)
 	if err := cmd.Start(); err != nil {
 		return nil, internal(err)
 	}
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go pump(&wg, stdout, "stdout", emit)
-	go pump(&wg, stderr, "stderr", emit)
-	wg.Wait()
 	err = cmd.Wait()
+	flush()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil // exited; only a detached child still held the output
+	}
 
 	res := scriptResult{Killed: ctx.Err() != nil}
 	var exitErr *exec.ExitError
@@ -376,15 +372,6 @@ func scalar(v any) string {
 	}
 	b, _ := json.Marshal(v)
 	return string(b)
-}
-
-func pump(wg *sync.WaitGroup, r io.Reader, channel string, emit Emit) {
-	defer wg.Done()
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		emit(protocol.StreamChunk{Channel: channel, Data: sc.Text() + "\n"})
-	}
 }
 
 // --- macro ---

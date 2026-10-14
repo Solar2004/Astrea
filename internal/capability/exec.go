@@ -1,12 +1,10 @@
 package capability
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
 	"os/exec"
-	"sync"
 
 	"github.com/Solar2004/Astrea/internal/procutil"
 	"github.com/Solar2004/Astrea/internal/protocol"
@@ -71,28 +69,18 @@ func (Exec) Invoke(ctx context.Context, payload json.RawMessage, emit Emit) (any
 	cmd.Dir = req.Cwd
 	procutil.NoConsole(cmd)
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, internal(err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, internal(err)
-	}
+	flush := procutil.StreamOutput(cmd, func(c protocol.StreamChunk) { emit(c) })
 	if err := cmd.Start(); err != nil {
 		return nil, internal(err)
 	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go pump(&wg, stdout, "stdout", emit)
-	go pump(&wg, stderr, "stderr", emit)
-	wg.Wait()
-
 	err = cmd.Wait()
+	flush()
 	res := execResult{}
 	if ctx.Err() == context.DeadlineExceeded {
 		res.Killed = true
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil // exited; only a detached child still held the output
 	}
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		res.ExitCode = exitErr.ExitCode()
@@ -100,16 +88,6 @@ func (Exec) Invoke(ctx context.Context, payload json.RawMessage, emit Emit) (any
 		return nil, internal(err)
 	}
 	return res, nil
-}
-
-// pump reads r line-by-line and emits each chunk on the given channel.
-func pump(wg *sync.WaitGroup, r io.Reader, channel string, emit Emit) {
-	defer wg.Done()
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		emit(protocol.StreamChunk{Channel: channel, Data: sc.Text() + "\n"})
-	}
 }
 
 func internal(err error) error {

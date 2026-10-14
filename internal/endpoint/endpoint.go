@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -179,8 +180,9 @@ func (m *Manager) serveExec(w http.ResponseWriter, r *http.Request, spec *Spec) 
 	procutil.NoConsole(cmd)
 	cmd.Stdin = r.Body
 	cmd.Env = append(os.Environ(), "ASTREA_QUERY="+r.URL.RawQuery, "ASTREA_METHOD="+r.Method)
+	cmd.WaitDelay = procutil.PipeGrace // don't hang on a detached child holding stdout
 	out, err := cmd.Output()
-	if err != nil {
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		http.Error(w, "exec failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
