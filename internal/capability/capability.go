@@ -53,6 +53,13 @@ func (r *Registry) Register(c Capability) {
 	r.caps[c.Name()] = c
 }
 
+// Unregister removes the capability named method, if present.
+func (r *Registry) Unregister(method string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.caps, method)
+}
+
 // Get returns the capability for method, if registered.
 func (r *Registry) Get(method string) (Capability, bool) {
 	r.mu.RLock()

@@ -67,14 +67,15 @@ make test       # tests
 
 | Herramienta           | Qué hace                                                   |
 |-----------------------|------------------------------------------------------------|
-| `astrea.exec`         | Ejecuta un comando shell, stdout/stderr en vivo            |
-| `astrea.fs.list/read/write` | Listar, leer y escribir archivos                     |
+| `astrea.exec`         | Ejecuta un comando (cmd, powershell, bash, python…), salida en vivo |
+| `astrea.fs.list/read/write` | Listar, leer y escribir archivos (texto o base64)    |
 | `astrea.sys.info`     | OS, plataforma, uptime, memoria                            |
 | `astrea.proc.list/kill` | Listar y matar procesos                                  |
 | `astrea.mouse.move/click` | Mover y hacer clic con el mouse                        |
 | `astrea.key.type`     | Escribir texto por teclado                                 |
-| `astrea.screen.capture` | Captura de pantalla (PNG)                                |
-| `astrea.endpoint.create/list/delete` | APIs HTTP dinámicas en `/dyn/<name>` (exec/proxy/static) |
+| `astrea.screen.capture` | Captura de pantalla — la IA la recibe como imagen        |
+| `astrea.task.define/list/get/delete/run` | Automatizaciones creadas por la IA; cada una es su propia tool `astrea.task.<name>` |
+| `astrea.endpoint.create/list/delete` | APIs HTTP dinámicas en `/dyn/<name>` (exec/proxy/static/task) |
 | `astrea.admin.lock/status/stop` | Kill switch y control del agente                 |
 
 ### Endpoints dinámicos — el diferenciador
@@ -86,9 +87,23 @@ Tu agente puede montar rutas HTTP en caliente sobre el tailnet:
 - `kind: proxy` — reverse-proxy a un servicio local (ej. un modelo en
   `http://127.0.0.1:11434`), exponiéndolo como API interna.
 - `kind: static` — respuesta fija.
+- `kind: task` — publica una task (ver abajo) como API: body JSON o query string
+  son sus argumentos.
 
 Así Hermes puede, por ejemplo, instalar un modelo local con `exec`, levantarlo, y
 crear un endpoint `proxy` para consumirlo — todo en tiempo real.
+
+### Tasks — automatizaciones que la IA crea en caliente
+
+La IA define en la PC remota una tarea con nombre y parámetros, y al instante
+aparece como una tool nueva (`astrea.task.<name>`), sin reiniciar nada. Dos tipos:
+
+- **script** — PowerShell/Python/bash/cmd/node con lógica propia ("¿qué modelos
+  tengo instalados?", "encola este workflow en ComfyUI").
+- **macro** — secuencia de capacidades ("abre Roblox, espera, captura la
+  pantalla").
+
+Persisten entre reinicios. Ejemplos completos en [`docs/TASKS.md`](docs/TASKS.md).
 
 ## Seguridad
 

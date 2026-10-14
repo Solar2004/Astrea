@@ -20,17 +20,19 @@ func (EndpointCreate) Describe() Descriptor {
 		Description: "Mount a dynamic HTTP endpoint at /dyn/<name> on the controlled machine. " +
 			"kind=exec runs a shell command (request body on stdin, stdout is the response); " +
 			"kind=proxy reverse-proxies to a local target URL (e.g. a local AI server); " +
-			"kind=static returns a fixed body.",
+			"kind=static returns a fixed body; " +
+			"kind=task exposes a task (see task.define) as an HTTP API: JSON body or query string = arguments.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"name": {"type": "string", "description": "Route name; served at /dyn/<name>."},
-				"kind": {"type": "string", "enum": ["exec", "proxy", "static"]},
+				"kind": {"type": "string", "enum": ["exec", "proxy", "static", "task"]},
 				"command": {"type": "string", "description": "exec: shell command. Request body arrives on stdin; query string in $ASTREA_QUERY."},
 				"shell": {"type": "string", "enum": ["default", "cmd", "powershell", "pwsh", "sh", "bash", "python", "node"], "description": "exec: shell for command."},
 				"target": {"type": "string", "description": "proxy: base URL, e.g. http://127.0.0.1:11434"},
 				"body": {"type": "string", "description": "static: response body."},
-				"content_type": {"type": "string", "description": "static: Content-Type header."}
+				"content_type": {"type": "string", "description": "static: Content-Type header."},
+				"task": {"type": "string", "description": "task: name of the task to run."}
 			},
 			"required": ["name", "kind"]
 		}`),

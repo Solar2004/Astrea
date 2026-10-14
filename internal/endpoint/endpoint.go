@@ -5,6 +5,7 @@
 package endpoint
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,10 +17,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Solar2004/Astrea/internal/procutil"
+	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/shell"
 )
 
@@ -35,7 +38,13 @@ const (
 	KindProxy Kind = "proxy"
 	// KindStatic returns a fixed response body.
 	KindStatic Kind = "static"
+	// KindTask runs a stored task: a JSON object body (or the query string)
+	// becomes its arguments, and the response is JSON {result, output}.
+	KindTask Kind = "task"
 )
+
+// TaskRunner runs a stored task by name (see package task).
+type TaskRunner func(ctx context.Context, name string, args json.RawMessage, emit func(protocol.StreamChunk)) (any, error)
 
 // Spec defines one dynamic endpoint.
 type Spec struct {
@@ -50,6 +59,8 @@ type Spec struct {
 	// Body/ContentType are used by KindStatic.
 	Body        string `json:"body,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
+	// Task is the task name used by KindTask.
+	Task string `json:"task,omitempty"`
 }
 
 // Manager stores dynamic endpoints and serves them under a mount prefix.
@@ -57,6 +68,9 @@ type Manager struct {
 	mu        sync.RWMutex
 	endpoints map[string]*Spec
 	store     string // optional path to persist specs as JSON
+
+	// Tasks runs KindTask endpoints. Set before serving.
+	Tasks TaskRunner
 }
 
 // NewManager returns a Manager. If store is non-empty, specs are loaded from it
@@ -84,6 +98,10 @@ func (m *Manager) Create(s *Spec) error {
 		}
 	case KindStatic:
 		// body may be empty
+	case KindTask:
+		if s.Task == "" {
+			return fmt.Errorf("task endpoint requires task (the task name)")
+		}
 	default:
 		return fmt.Errorf("unknown kind %q", s.Kind)
 	}
@@ -137,6 +155,8 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveExec(w, r, spec)
 	case KindProxy:
 		m.serveProxy(w, r, spec, rest)
+	case KindTask:
+		m.serveTask(w, r, spec)
 	case KindStatic:
 		ct := spec.ContentType
 		if ct == "" {
@@ -165,6 +185,45 @@ func (m *Manager) serveExec(w http.ResponseWriter, r *http.Request, spec *Spec) 
 		return
 	}
 	_, _ = w.Write(out)
+}
+
+func (m *Manager) serveTask(w http.ResponseWriter, r *http.Request, spec *Spec) {
+	w.Header().Set("Content-Type", "application/json")
+	fail := func(code int, msg string) {
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	}
+	if m.Tasks == nil {
+		fail(http.StatusServiceUnavailable, "tasks are not enabled on this agent")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
+	if err != nil {
+		fail(http.StatusBadRequest, err.Error())
+		return
+	}
+	args := json.RawMessage(body)
+	if len(bytes.TrimSpace(body)) == 0 {
+		q := map[string]string{}
+		for k, v := range r.URL.Query() {
+			q[k] = v[0]
+		}
+		args, _ = json.Marshal(q)
+	}
+	var out strings.Builder
+	var mu sync.Mutex
+	result, err := m.Tasks(r.Context(), spec.Task, args, func(c protocol.StreamChunk) {
+		mu.Lock()
+		if out.Len() < 1<<20 {
+			out.WriteString(c.Data)
+		}
+		mu.Unlock()
+	})
+	if err != nil {
+		fail(http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"result": result, "output": out.String()})
 }
 
 func (m *Manager) serveProxy(w http.ResponseWriter, r *http.Request, spec *Spec, rest string) {

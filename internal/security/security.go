@@ -49,13 +49,27 @@ func (g *Guard) Check(method string) error {
 	if g.locked && !isAdmin {
 		return &protocol.Error{Code: protocol.CodeDenied, Message: "agent is locked (kill switch active); only admin.* methods allowed"}
 	}
-	if g.deny[method] {
+	if match(g.deny, method) {
 		return &protocol.Error{Code: protocol.CodeDenied, Message: "method is denied by configuration"}
 	}
-	if len(g.allow) > 0 && !g.allow[method] && !isAdmin {
+	if len(g.allow) > 0 && !match(g.allow, method) && !isAdmin {
 		return &protocol.Error{Code: protocol.CodeDenied, Message: "method is not in the allow list"}
 	}
 	return nil
+}
+
+// match reports whether method is in set, either literally or through a
+// "prefix.*" entry (e.g. "task.*" covers every AI-defined task).
+func match(set map[string]bool, method string) bool {
+	if set[method] {
+		return true
+	}
+	for i := len(method) - 1; i > 0; i-- {
+		if method[i] == '.' && set[method[:i]+".*"] {
+			return true
+		}
+	}
+	return false
 }
 
 // Lock engages the kill switch. SetLock(false) releases it.

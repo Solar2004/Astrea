@@ -37,3 +37,16 @@ func TestGuardKillSwitch(t *testing.T) {
 		t.Fatalf("exec allowed after unlock: %v", err)
 	}
 }
+
+func TestGuardWildcards(t *testing.T) {
+	g := NewGuard([]string{"task.*", "screen.capture"}, []string{"task.danger"})
+	if err := g.Check("task.hora"); err != nil {
+		t.Fatalf("task.* should allow task.hora: %v", err)
+	}
+	if err := g.Check("task.danger"); err == nil {
+		t.Fatal("explicit deny must win over a wildcard allow")
+	}
+	if err := g.Check("exec"); err == nil {
+		t.Fatal("exec is not covered by task.*")
+	}
+}

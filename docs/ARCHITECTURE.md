@@ -33,6 +33,7 @@ Una conexión WebSocket de larga vida transporta tramas JSON (`internal/protocol
 - `stream`   agente → hub: salida incremental (p.ej. stdout de `exec` en vivo)
 - `result`   agente → hub: éxito terminal
 - `error`    agente → hub: fallo terminal
+- `cancel`   hub → agente: aborta la petición (el hub dejó de esperar)
 
 Cada `request` recibe exactamente un `result`/`error`, precedido por los `stream`
 que haga falta. El hub correlaciona por `id` (ver `internal/transport/client.go`).
@@ -59,6 +60,9 @@ IA. Capas actuales y pendientes:
   (`exec`/`proxy`/`static`) → APIs internas en tiempo real. **✓ hecho**
 - **Seguridad**: token, allow/deny, kill switch (`admin.lock`), audit log,
   reconexión del hub, caché de capabilities. **✓ hecho**
+- **Tasks**: automatizaciones definidas por la IA (`task.define`, kinds
+  `script`/`macro`), cada una publicada como tool MCP en vivo y opcionalmente
+  como `/dyn/<name>`. **✓ hecho** — ver [`TASKS.md`](TASKS.md).
 - **F4** *(siguiente)* Servicios/IA: `service.spawn` para procesos de larga vida
   (ollama/llama.cpp) con seguimiento, y helpers de instalación de paquetes.
   Hoy ya es posible vía `exec` + `endpoint.create` kind=proxy.

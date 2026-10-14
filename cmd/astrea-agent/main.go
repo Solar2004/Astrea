@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"io"
 	"log"
@@ -21,7 +22,9 @@ import (
 	"github.com/Solar2004/Astrea/internal/capability"
 	"github.com/Solar2004/Astrea/internal/config"
 	"github.com/Solar2004/Astrea/internal/endpoint"
+	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
+	"github.com/Solar2004/Astrea/internal/task"
 	"github.com/Solar2004/Astrea/internal/transport"
 )
 
@@ -140,6 +143,27 @@ func main() {
 	reg.Register(capability.EndpointCreate{Mgr: dyn})
 	reg.Register(capability.EndpointList{Mgr: dyn})
 	reg.Register(capability.EndpointDelete{Mgr: dyn})
+	// AI-defined tasks: each becomes its own capability (task.<name>). Macro
+	// steps go through the same guard and audit log as direct calls.
+	tasks := task.NewManager(cfg.DataDir)
+	tasks.SetDispatch(func(ctx context.Context, method string, payload json.RawMessage, emit task.Emit) (any, error) {
+		if err := guard.Check(method); err != nil {
+			audit.Log(method, payload, err)
+			return nil, err
+		}
+		res, err := reg.Dispatch(ctx, method, payload, capability.Emit(emit))
+		audit.Log(method, payload, err)
+		return res, err
+	})
+	capability.RegisterTasks(reg, tasks)
+	dyn.Tasks = func(ctx context.Context, name string, args json.RawMessage, emit func(protocol.StreamChunk)) (any, error) {
+		if err := guard.Check("task." + name); err != nil {
+			return nil, err
+		}
+		res, err := tasks.Run(ctx, name, args, emit)
+		audit.Log("dyn:task."+name, args, err)
+		return res, err
+	}
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
 	reg.Register(capability.AdminStatus{Guard: guard})
