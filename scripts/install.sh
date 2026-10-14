@@ -96,7 +96,7 @@ Description=Astrea panel — dashboard de hardware de la flota (localhost:7780)
 After=network-online.target
 
 [Service]
-ExecStart=${BINDIR}/astrea-panel --listen 127.0.0.1:7780 --open=false
+ExecStart=${BINDIR}/astrea-panel --config ${CFGDIR}/machines.json --listen 127.0.0.1:7780 --open=false
 Restart=on-failure
 RestartSec=5
 
