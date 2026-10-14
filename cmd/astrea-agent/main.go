@@ -24,6 +24,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/endpoint"
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
+	"github.com/Solar2004/Astrea/internal/supervise"
 	"github.com/Solar2004/Astrea/internal/task"
 	"github.com/Solar2004/Astrea/internal/transport"
 )
@@ -164,6 +165,23 @@ func main() {
 		audit.Log("dyn:task."+name, args, err)
 		return res, err
 	}
+	// Dependencies: detect and install git, python, CUDA, ….
+	reg.Register(capability.DepsCheck{})
+	reg.Register(capability.DepsEnsure{})
+	// Background jobs and supervised services (llama-server, ComfyUI, …).
+	jobs := supervise.NewJobs(filepath.Join(cfg.DataDir, "jobs"))
+	defer jobs.StopAll()
+	svcs := supervise.NewServices(filepath.Join(cfg.DataDir, "services"))
+	defer svcs.StopAll()
+	reg.Register(capability.JobStart{Jobs: jobs})
+	reg.Register(capability.JobStatus{Jobs: jobs})
+	reg.Register(capability.JobLogs{Jobs: jobs})
+	reg.Register(capability.JobCancel{Jobs: jobs})
+	reg.Register(capability.ServiceStart{Svcs: svcs, Dyn: dyn})
+	reg.Register(capability.ServiceStop{Svcs: svcs, Dyn: dyn})
+	reg.Register(capability.ServiceStatus{Svcs: svcs})
+	reg.Register(capability.ServiceLogs{Svcs: svcs})
+	go svcs.StartAll()
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
 	reg.Register(capability.AdminStatus{Guard: guard})
