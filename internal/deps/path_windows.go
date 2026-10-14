@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/Solar2004/Astrea/internal/procutil"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -16,6 +18,11 @@ import (
 // stubs: on a fresh Windows, python.exe in WindowsApps exists but only opens
 // the Store, so it must not count as Python being installed.
 func lookPath(name string) (string, error) {
+	if strings.EqualFold(name, "winget") {
+		if p := realWinget(); p != "" {
+			return p, nil
+		}
+	}
 	p, err := exec.LookPath(name)
 	if err != nil {
 		return "", err
@@ -78,4 +85,31 @@ func regPath(root registry.Key, key string) []string {
 		v = exp
 	}
 	return filepath.SplitList(v)
+}
+
+var (
+	wingetOnce sync.Once
+	wingetPath string
+)
+
+// realWinget returns winget.exe inside the App Installer package. The usual
+// "winget" on PATH is an app execution alias (%LOCALAPPDATA%\Microsoft\
+// WindowsApps), which tends to fail outside an interactive session — exactly
+// where the headless agent runs after a reboot. The real binary works from
+// any session as the same user.
+func realWinget() string {
+	wingetOnce.Do(func() {
+		cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+			"(Get-AppxPackage -Name Microsoft.DesktopAppInstaller | Sort-Object Version -Descending | Select-Object -First 1).InstallLocation")
+		procutil.NoConsole(cmd)
+		out, err := cmd.Output()
+		if err != nil {
+			return
+		}
+		p := filepath.Join(strings.TrimSpace(string(out)), "winget.exe")
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			wingetPath = p
+		}
+	})
+	return wingetPath
 }

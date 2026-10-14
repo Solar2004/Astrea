@@ -11,8 +11,12 @@
   - Descarga el agente del ultimo release y verifica su SHA256.
   - Escribe la config (UTF-8 sin BOM) conservando el token si ya existia.
   - Abre el puerto en el Firewall de Windows solo para el tailnet.
-  - Registra una tarea programada que arranca el agente en tu sesion de
-    escritorio al iniciar sesion (necesario para mouse/teclado/captura).
+  - Registra dos tareas programadas:
+      AstreaAgent     al encender la PC, sin que nadie inicie sesion (modo
+                      headless, como tu usuario): comandos, servicios (modelos),
+                      descargas. Tras un reinicio los modelos vuelven solos.
+      AstreaAgentGUI  al iniciar sesion: pantalla, mouse y teclado.
+    Con ASTREA_HEADLESS=0 se usa el modo clasico (una sola tarea al iniciar sesion).
   - Comprueba que el agente responde y te imprime la config del hub.
 
 .EXAMPLE
@@ -24,6 +28,8 @@
     $env:ASTREA_PORT        -> puerto (default 7700)
     $env:ASTREA_REPO        -> owner/repo (default Solar2004/Astrea)
     $env:ASTREA_TS_AUTHKEY  -> auth key de Tailscale para entrar sin navegador
+    $env:ASTREA_HEADLESS=0  -> sin modo headless: el agente solo corre con la sesion iniciada
+    $env:ASTREA_GUI_PORT    -> puerto local (127.0.0.1) del ayudante GUI (default 7701)
     $env:ASTREA_UNINSTALL=1 -> desinstala el agente
 #>
 
@@ -41,6 +47,9 @@ $CfgPath    = Join-Path $InstallDir 'config.json'
 $LogPath    = Join-Path $InstallDir 'agent.log'
 $HubCfgPath = Join-Path $InstallDir 'hub-config.txt'
 $TaskName   = 'AstreaAgent'
+$GuiTask    = 'AstreaAgentGUI'
+$GuiPort    = if ($env:ASTREA_GUI_PORT) { $env:ASTREA_GUI_PORT } else { '7701' }
+$Headless   = $env:ASTREA_HEADLESS -ne '0'
 $RuleName   = 'Astrea Agent'
 $Elevated   = $env:ASTREA_ELEVATED -eq '1'
 
@@ -119,6 +128,8 @@ function Start-Elevated {
     ASTREA_REPO       = $env:ASTREA_REPO
     ASTREA_TS_AUTHKEY = $env:ASTREA_TS_AUTHKEY
     ASTREA_UNINSTALL  = $env:ASTREA_UNINSTALL
+    ASTREA_HEADLESS   = $env:ASTREA_HEADLESS
+    ASTREA_GUI_PORT   = $env:ASTREA_GUI_PORT
   }
   $set = ($vars.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object {
     "`$env:$($_.Key)='$($_.Value -replace "'", "''")'"
@@ -227,7 +238,7 @@ function Connect-Tailscale([string]$ts) {
 # 3. Agente
 # ---------------------------------------------------------------------------
 function Stop-Agent {
-  Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  foreach ($t in @($TaskName, $GuiTask)) { Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue }
   Get-Process -Name 'astrea-agent' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 800
 }
@@ -330,20 +341,57 @@ function Set-FirewallRule {
   }
 }
 
-function Register-AgentTask([string]$user) {
-  Step "Arranque automatico"
-  # Corre en la sesion de escritorio del usuario para poder mover el mouse y
-  # capturar pantalla; un servicio en la sesion 0 no puede.
-  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+function New-AgentTaskSettings {
+  New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+}
+
+# Modo clasico: un solo proceso en la sesion de escritorio, al iniciar sesion.
+function Register-ClassicTask([string]$user) {
   $action    = New-ScheduledTaskAction -Execute $ExePath -Argument "--config `"$CfgPath`"" -WorkingDirectory $InstallDir
   $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
   $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
-  $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
-                 -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) `
-                 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
-  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings (New-AgentTaskSettings) | Out-Null
   Start-ScheduledTask -TaskName $TaskName
-  Ok "Tarea '$TaskName' registrada para $user y arrancada"
+  Ok "Tarea '$TaskName' (modo clasico: solo con la sesion iniciada) registrada para $user y arrancada"
+}
+
+function Register-AgentTask([string]$user) {
+  Step "Arranque automatico"
+  foreach ($t in @($TaskName, $GuiTask)) {
+    Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
+  }
+  if (-not $Headless) { Register-ClassicTask $user; return }
+
+  # 1) Agente headless: al encender la PC, como TU usuario aunque nadie inicie
+  #    sesion. S4U = "ejecutar tanto si el usuario inicio sesion como si no"
+  #    sin guardar contrasena. Al ser tu usuario (no SYSTEM), HOME, la cache de
+  #    HuggingFace, los modelos de ollama y lo instalado con winget son los
+  #    mismos que con la sesion iniciada. Corre en la sesion 0: no ve el
+  #    escritorio; eso lo hace el ayudante GUI.
+  $gui = "--gui-addr 127.0.0.1:$GuiPort"
+  try {
+    $action    = New-ScheduledTaskAction -Execute $ExePath -Argument "--config `"$CfgPath`" --role headless $gui" -WorkingDirectory $InstallDir
+    $trigger   = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType S4U -RunLevel Highest
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings (New-AgentTaskSettings) -ErrorAction Stop | Out-Null
+  } catch {
+    Warn "Windows no acepto la tarea sin sesion para $user ($($_.Exception.Message))."
+    Warn "Uso el modo clasico: el agente solo funcionara con la sesion iniciada."
+    Register-ClassicTask $user
+    return
+  }
+
+  # 2) Ayudante GUI: al iniciar sesion, dentro del escritorio, solo en loopback.
+  $action    = New-ScheduledTaskAction -Execute $ExePath -Argument "--config `"$CfgPath`" --role gui $gui" -WorkingDirectory $InstallDir
+  $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
+  $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+  Register-ScheduledTask -TaskName $GuiTask -Action $action -Trigger $trigger -Principal $principal -Settings (New-AgentTaskSettings) | Out-Null
+
+  Start-ScheduledTask -TaskName $TaskName
+  Start-ScheduledTask -TaskName $GuiTask
+  Ok "Tarea '$TaskName' (al encender, sin sesion) y '$GuiTask' (pantalla/mouse/teclado al iniciar sesion) registradas para $user"
 }
 
 function Test-Agent([string]$ip) {
@@ -351,7 +399,11 @@ function Test-Agent([string]$ip) {
   for ($i = 0; $i -lt 20; $i++) {
     try {
       $r = Invoke-WebRequest -Uri "http://${ip}:$Port/healthz" -UseBasicParsing -TimeoutSec 2
-      if ($r.Content -match 'ok') { Ok "Agente escuchando en ${ip}:$Port"; return $true }
+      if ($r.Content -match 'ok') {
+        Ok "Agente escuchando en ${ip}:$Port"
+        if ($Headless -and (Get-ScheduledTask -TaskName $GuiTask -ErrorAction SilentlyContinue)) { Test-GuiHelper }
+        return $true
+      }
     } catch {}
     Start-Sleep 1
   }
@@ -362,6 +414,17 @@ function Test-Agent([string]$ip) {
     Get-Content $LogPath -Tail 10 | ForEach-Object { Write-Host "     $_" }
   }
   return $false
+}
+
+function Test-GuiHelper {
+  for ($i = 0; $i -lt 10; $i++) {
+    try {
+      $r = Invoke-WebRequest -Uri "http://127.0.0.1:$GuiPort/healthz" -UseBasicParsing -TimeoutSec 2
+      if ($r.Content -match 'ok') { Ok "Ayudante GUI activo (pantalla/mouse/teclado)"; return }
+    } catch {}
+    Start-Sleep 1
+  }
+  Warn "El ayudante GUI no responde en 127.0.0.1:${GuiPort}: pantalla/mouse/teclado no estaran disponibles hasta el proximo inicio de sesion. Mira $(Join-Path $InstallDir 'agent-gui.log')."
 }
 
 function Write-Summary([string]$ip, [string]$token) {
@@ -393,7 +456,9 @@ astrea-panel --ws ws://${ip}:$Port/ws --token $token
 function Uninstall-Astrea {
   Step "Desinstalando Astrea"
   Stop-Agent
-  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  foreach ($t in @($TaskName, $GuiTask)) {
+    Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
+  }
   Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
   Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue
   Ok "Agente, tarea, regla de firewall y $InstallDir eliminados (Tailscale se queda)."

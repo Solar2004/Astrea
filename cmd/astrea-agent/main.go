@@ -23,6 +23,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/config"
 	"github.com/Solar2004/Astrea/internal/download"
 	"github.com/Solar2004/Astrea/internal/endpoint"
+	"github.com/Solar2004/Astrea/internal/guibridge"
 	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
@@ -74,12 +75,24 @@ func main() {
 	token := flag.String("token", "", "bearer token (overrides config / ASTREA_TOKEN)")
 	dataDir := flag.String("data-dir", "", "data directory for audit log and endpoint store (overrides config)")
 	logFile := flag.String("log-file", "", "also write logs to this file (Windows default: agent.log next to the config)")
+	role := flag.String("role", roleFull, "full: everything in one process (default). "+
+		"headless: started at boot without a desktop session; GUI capabilities are forwarded to the gui helper. "+
+		"gui: helper inside the user's desktop session, serving only GUI capabilities on --gui-addr")
+	guiAddr := flag.String("gui-addr", "127.0.0.1:7701", "loopback address where the gui helper listens (roles headless and gui)")
 	flag.Parse()
+	switch *role {
+	case roleFull, roleHeadless, roleGUI:
+	default:
+		log.Fatalf("unknown --role %q (want full, headless or gui)", *role)
+	}
 
 	logger := log.New(os.Stderr, "astrea-agent ", log.LstdFlags)
 	if *logFile == "" && runtime.GOOS == "windows" {
 		// The Windows build has no console, so stderr goes nowhere.
 		*logFile = filepath.Join(filepath.Dir(*cfgPath), "agent.log")
+		if *role == roleGUI {
+			*logFile = filepath.Join(filepath.Dir(*cfgPath), "agent-gui.log")
+		}
 	}
 	if *logFile != "" {
 		if f, err := openLog(*logFile); err == nil {
@@ -116,6 +129,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if *role == roleGUI {
+		runGUIHelper(ctx, cfg, *guiAddr, logger)
+		return
+	}
+
 	// Security: guard (allow/deny + kill switch) and audit log.
 	if cfg.Mode == "" {
 		cfg.Mode = config.ModeYolo
@@ -140,11 +158,15 @@ func main() {
 	reg.Register(&capability.SysStats{})
 	reg.Register(capability.ProcList{})
 	reg.Register(capability.ProcKill{})
-	// Input and screen.
-	reg.Register(capability.MouseMove{})
-	reg.Register(capability.MouseClick{})
-	reg.Register(capability.KeyType{})
-	reg.Register(capability.ScreenCapture{})
+	// Input, screen and idle detection need the desktop session: served here,
+	// or (headless) forwarded to the gui helper running in that session.
+	if *role == roleHeadless {
+		registerGUIProxies(reg, guibridge.New("ws://"+*guiAddr+"/ws", cfg.Token))
+	} else {
+		for _, c := range guiCaps() {
+			reg.Register(c)
+		}
+	}
 	// Dynamic endpoints.
 	reg.Register(capability.EndpointCreate{Mgr: dyn})
 	reg.Register(capability.EndpointList{Mgr: dyn})
@@ -214,7 +236,6 @@ func main() {
 	if err != nil {
 		logger.Fatalf("keep_awake: %v", err)
 	}
-	reg.Register(capability.SysIdle{})
 	reg.Register(capability.PowerAwake{Keeper: keeper})
 	reg.Register(capability.PowerWake{})
 	reg.Register(capability.PowerAction{})
@@ -236,7 +257,7 @@ func main() {
 		if ln == nil {
 			return
 		}
-		logger.Printf("astrea-agent %s listening on %s with %d capabilities, mode %s (data dir %s)", version, cfg.Addr, len(reg.Descriptors()), cfg.Mode, cfg.DataDir)
+		logger.Printf("astrea-agent %s (role %s) listening on %s with %d capabilities, mode %s (data dir %s)", version, *role, cfg.Addr, len(reg.Descriptors()), cfg.Mode, cfg.DataDir)
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			logger.Fatalf("serve: %v", err)
 		}

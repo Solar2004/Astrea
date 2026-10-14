@@ -70,4 +70,7 @@ const (
 	CodeBadRequest    = "bad_request"
 	CodeInternal      = "internal"
 	CodeDenied        = "denied"
+	// CodeUnavailable: the capability exists but cannot run right now, e.g.
+	// screen/mouse/keyboard while nobody is logged in.
+	CodeUnavailable = "unavailable"
 )

@@ -38,7 +38,9 @@ irm https://raw.githubusercontent.com/Solar2004/Astrea/main/scripts/install.ps1 
 ```
 
 Descarga el agente, escribe la config con un token nuevo, lo registra para
-arrancar al iniciar sesión, y te imprime el bloque de config para el hub.
+arrancar **al encender la PC, aunque nadie inicie sesión** (los modelos vuelven
+solos tras un reinicio; pantalla/mouse/teclado se activan al iniciar sesión, ver
+[`docs/HEADLESS.md`](docs/HEADLESS.md)), y te imprime el bloque de config para el hub.
 
 **Linux**:
 
