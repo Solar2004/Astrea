@@ -6,11 +6,14 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -25,14 +28,61 @@ import (
 // version is set at build time via -ldflags "-X main.version=...".
 var version = "dev"
 
+// listenRetry binds addr, retrying until it succeeds or ctx ends. At logon
+// the agent often starts before Tailscale has assigned the tailnet IP it is
+// configured to bind, so a failed bind is expected and transient.
+func listenRetry(ctx context.Context, addr string, logger *log.Logger) net.Listener {
+	delay := time.Second
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			return ln
+		}
+		logger.Printf("listen %s: %v (retrying in %s; is Tailscale connected?)", addr, err, delay)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(delay):
+		}
+		if delay < 15*time.Second {
+			delay *= 2
+		}
+	}
+}
+
+// openLog opens path for appending, starting fresh once it grows past 5 MiB.
+func openLog(path string) (*os.File, error) {
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if st, err := os.Stat(path); err == nil && st.Size() > 5<<20 {
+		flags |= os.O_TRUNC
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, flags, 0o644)
+}
+
 func main() {
 	cfgPath := flag.String("config", config.DefaultPath(), "path to config file")
 	addr := flag.String("addr", "", "listen address (overrides config; default 0.0.0.0:7700)")
 	token := flag.String("token", "", "bearer token (overrides config / ASTREA_TOKEN)")
 	dataDir := flag.String("data-dir", "", "data directory for audit log and endpoint store (overrides config)")
+	logFile := flag.String("log-file", "", "also write logs to this file (Windows default: agent.log next to the config)")
 	flag.Parse()
 
 	logger := log.New(os.Stderr, "astrea-agent ", log.LstdFlags)
+	if *logFile == "" && runtime.GOOS == "windows" {
+		// The Windows build has no console, so stderr goes nowhere.
+		*logFile = filepath.Join(filepath.Dir(*cfgPath), "agent.log")
+	}
+	if *logFile != "" {
+		if f, err := openLog(*logFile); err == nil {
+			defer f.Close()
+			// File first: io.MultiWriter stops at the first failing writer, and
+			// stderr is an invalid handle in a GUI-subsystem process.
+			logger.SetOutput(io.MultiWriter(f, os.Stderr))
+		}
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -78,6 +128,7 @@ func main() {
 	reg.Register(capability.FSRead{})
 	reg.Register(capability.FSWrite{})
 	reg.Register(capability.SysInfo{})
+	reg.Register(&capability.SysStats{})
 	reg.Register(capability.ProcList{})
 	reg.Register(capability.ProcKill{})
 	// Input and screen.
@@ -103,8 +154,12 @@ func main() {
 	httpSrv := &http.Server{Addr: cfg.Addr, Handler: srv.Handler()}
 
 	go func() {
+		ln := listenRetry(ctx, cfg.Addr, logger)
+		if ln == nil {
+			return
+		}
 		logger.Printf("astrea-agent %s listening on %s with %d capabilities (data dir %s)", version, cfg.Addr, len(reg.Descriptors()), cfg.DataDir)
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			logger.Fatalf("serve: %v", err)
 		}
 	}()

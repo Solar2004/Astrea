@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astrea — Panel</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f3f3f1;
+    --surface-1: #fcfcfb;
+    --border: #e2e1dc;
+    --track: #ebeae6;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #7a7974;
+    --series-1: #2a78d6;
+    --series-1-soft: rgba(42, 120, 214, 0.14);
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --border: #2e2e2b;
+      --track: #2a2a27;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8f8e86;
+      --series-1: #3987e5;
+      --series-1-soft: rgba(57, 135, 229, 0.20);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--surface-0); color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header.top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+  header.top h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header.top .sub { color: var(--text-muted); font-size: 13px; }
+  .machine { margin-bottom: 32px; }
+  .mhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+  .mhead h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .mhead .meta { color: var(--text-secondary); font-size: 13px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status.on .dot { background: var(--good); }
+  .status.off .dot { background: var(--critical); }
+  .error { color: var(--text-secondary); background: var(--surface-1); border: 1px solid var(--border);
+           border-left: 3px solid var(--critical); padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
+  .card h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+  .card .model { color: var(--text-secondary); font-size: 13px; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .hero .num { font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+  .hero .detail { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .meter { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .meter > span { display: block; height: 100%; background: var(--series-1); border-radius: 4px; transition: width .4s ease; }
+  .spark { position: relative; margin-top: 12px; }
+  .spark svg { display: block; width: 100%; height: 56px; overflow: visible; }
+  .spark .tip { position: absolute; top: -6px; transform: translate(-50%, -100%); pointer-events: none;
+                background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+                padding: 3px 7px; font-size: 12px; white-space: nowrap; color: var(--text-primary);
+                box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; font-variant-numeric: tabular-nums; }
+  .spark .axis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin-top: 12px; font-size: 13px; }
+  .facts dt { color: var(--text-muted); }
+  .facts dd { margin: 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .cores-label { color: var(--text-muted); font-size: 11px; margin: 12px 0 4px; }
+  .cores { display: flex; gap: 2px; height: 36px; }
+  .cores span { flex: 1; min-width: 0; display: flex; align-items: flex-end; background: var(--track); border-radius: 2px; overflow: hidden; }
+  .cores span i { display: block; width: 100%; background: var(--series-1); min-height: 1px; }
+  .disk { margin-top: 10px; }
+  .disk:first-of-type { margin-top: 4px; }
+  .disk .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .disk .row .v { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .na { color: var(--text-muted); }
+  .empty { color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Astrea</h1>
+  <span class="sub" id="updated">conectando…</span>
+</header>
+<main id="root"></main>
+
+<script>
+"use strict";
+const POLL_MS = 2000;
+const HISTORY = 60; // samples kept per series (~2 min)
+const history = new Map(); // key -> [{t, v}]
+
+const $ = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") el.className = v; else if (k === "style") el.style.cssText = v; else el.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) el.append(k);
+  return el;
+};
+
+function bytes(n) {
+  if (n == null) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
+}
+const pct = v => v == null ? "—" : Math.round(v) + "%";
+function uptime(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+const hhmmss = t => new Date(t).toLocaleTimeString();
+
+const series = key => history.get(key) || [];
+function record(key, v, t) {
+  if (v == null) return;
+  const h = history.get(key) || [];
+  h.push({ t, v: Math.max(0, Math.min(100, v)) });
+  if (h.length > HISTORY) h.shift();
+  history.set(key, h);
+}
+
+// Record every series on each poll, even while rendering is paused.
+function recordAll(list, t) {
+  list.forEach((m, idx) => {
+    if (!m.online) return;
+    const key = m.name || "m" + idx, s = m.stats;
+    record(key + ":cpu", s.cpu.usage_percent, t);
+    record(key + ":mem", s.memory.used_percent, t);
+    s.gpus.forEach((g, i) => record(`${key}:gpu${i}`, g.usage_percent, t));
+  });
+}
+
+function meter(v) {
+  return $("div", { class: "meter", role: "meter", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(v ?? 0)) },
+    $("span", { style: `width:${Math.max(0, Math.min(100, v ?? 0))}%` }));
+}
+
+// Sparkline of a 0–100 % series, with a crosshair + tooltip on hover.
+function sparkline(points, label) {
+  const W = 300, H = 56;
+  const wrap = $("div", { class: "spark" });
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${label}: historial de uso`);
+  const x = i => (HISTORY <= 1 ? 0 : (i + HISTORY - points.length) * W / (HISTORY - 1));
+  const y = v => H - 1 - v / 100 * (H - 2);
+  const mk = (tag, attrs) => { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
+  mk("line", { x1: 0, x2: W, y1: H - 0.5, y2: H - 0.5, stroke: "var(--border)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" });
+  if (points.length > 1) {
+    const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+    mk("polygon", { points: `${x(0)},${H} ${line} ${x(points.length - 1)},${H}`, fill: "var(--series-1-soft)" });
+    mk("polyline", { points: line, fill: "none", stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" });
+  }
+  const cross = mk("line", { y1: 0, y2: H, stroke: "var(--text-muted)", "stroke-width": 1, "vector-effect": "non-scaling-stroke", visibility: "hidden" });
+  const tip = $("div", { class: "tip" });
+  svg.addEventListener("mousemove", ev => {
+    if (!points.length) return;
+    const r = svg.getBoundingClientRect();
+    const fx = (ev.clientX - r.left) / r.width * W;
+    let best = 0;
+    points.forEach((p, i) => { if (Math.abs(x(i) - fx) < Math.abs(x(best) - fx)) best = i; });
+    const p = points[best], px = x(best);
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    tip.textContent = `${pct(p.v)} · ${hhmmss(p.t)}`;
+    tip.style.left = (px / W * 100) + "%";
+    tip.style.display = "block";
+  });
+  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  wrap.append(svg, tip, $("div", { class: "axis" }, $("span", {}, "hace ~2 min"), $("span", {}, "ahora")));
+  return wrap;
+}
+
+function facts(rows) {
+  const dl = $("dl", { class: "facts" });
+  for (const [k, v] of rows) if (v != null && v !== "") dl.append($("dt", {}, k), $("dd", {}, v));
+  return dl;
+}
+
+function cpuCard(key, s) {
+  const c = s.cpu;
+  const h = series(key + ":cpu");
+  const cores = $("div", { class: "cores" });
+  for (const [i, v] of (c.per_core || []).entries()) {
+    cores.append($("span", { title: `Hilo ${i}: ${pct(v)}` }, $("i", { style: `height:${Math.min(100, v)}%` })));
+  }
+  return $("section", { class: "card" },
+    $("h3", {}, "CPU"),
+    $("div", { class: "model", title: c.model }, c.model || "—"),
+    $("div", { class: "hero" }, $("span", { class: "num" }, pct(c.usage_percent)),
+      $("span", { class: "detail" }, `${c.cores} núcleos · ${c.threads} hilos`)),
+    meter(c.usage_percent),
+    sparkline(h, "CPU"),
+    $("div", { class: "cores-label" }, "Uso por hilo"),
+    cores);
+}
+
+function memCard(key, s) {
+  const m = s.memory;
+  const h = series(key + ":mem");
+  return $("section", { class: "card" },
+    $("h3", {}, "Memoria RAM"),
+    $("div", { class: "model" }, `${bytes(m.total)} instalados`),
+    $("div", { class: "hero" }, $("span", { class: "num" }, pct(m.used_percent)),
+      $("span", { class: "detail" }, `${bytes(m.used)} de ${bytes(m.total)}`)),
+    meter(m.used_percent),
+    sparkline(h, "RAM"),
+    facts([["Disponible", bytes(m.available)],
+           ["Swap / paginación", m.swap_total ? `${bytes(m.swap_used)} de ${bytes(m.swap_total)}` : null]]));
+}
+
+function gpuCard(key, g, i) {
+  const h = series(`${key}:gpu${i}`);
+  const vram = g.vram_used != null && g.vram_total ? g.vram_used / g.vram_total * 100 : null;
+  return $("section", { class: "card" },
+    $("h3", {}, "Gráfica" + (g.vendor ? ` · ${g.vendor}` : "")),
+    $("div", { class: "model", title: g.name }, g.name || "—"),
+    $("div", { class: "hero" },
+      $("span", { class: "num" }, g.usage_percent == null ? $("span", { class: "na" }, "—") : pct(g.usage_percent)),
+      $("span", { class: "detail" }, g.usage_percent == null ? "uso no disponible con este driver" : "uso")),
+    meter(g.usage_percent),
+    g.usage_percent == null ? null : sparkline(h, g.name),
+    facts([[g.shared_memory ? "Memoria (compartida)" : "VRAM",
+            g.vram_used != null ? `${bytes(g.vram_used)} de ${bytes(g.vram_total)} (${pct(vram)})` : bytes(g.vram_total)],
+           ["Temperatura", g.temperature_c != null ? `${Math.round(g.temperature_c)} °C` : null]]));
+}
+
+function diskCard(s) {
+  const card = $("section", { class: "card" }, $("h3", {}, "Discos"));
+  if (!s.disks.length) card.append($("div", { class: "empty" }, "Sin datos de discos"));
+  for (const d of s.disks) {
+    card.append($("div", { class: "disk" },
+      $("div", { class: "row" }, $("span", {}, d.mount), $("span", { class: "v" }, `${bytes(d.used)} de ${bytes(d.total)} · ${pct(d.used_percent)}`)),
+      meter(d.used_percent)));
+  }
+  return card;
+}
+
+function explain(err) {
+  if (/unknown_method/.test(err)) return "El agente de esa PC es una versión antigua sin sys.stats. Reinstálalo con el script de instalación.";
+  if (/unauthorized|401/.test(err)) return "Token incorrecto: revisa el token configurado para esta máquina.";
+  return "No se puede contactar con el agente (" + err + "). ¿Está encendida la PC y conectada a Tailscale?";
+}
+
+const lastGood = new Map();
+
+function render(list) {
+  const root = document.getElementById("root");
+  root.replaceChildren(...list.map((m, idx) => {
+    const key = m.name || "m" + idx;
+    const s = m.online ? m.stats : lastGood.get(key);
+    if (m.online) lastGood.set(key, s);
+    const title = m.name || s?.host?.hostname || "Máquina " + (idx + 1);
+    const head = $("div", { class: "mhead" },
+      $("h2", {}, title),
+      $("span", { class: "status " + (m.online ? "on" : "off") }, $("span", { class: "dot" }), m.online ? "En línea" : "Sin conexión"),
+      s ? $("span", { class: "meta" }, [s.host.platform, s.host.platform_version].filter(Boolean).join(" ") +
+          ` · ${s.host.kernel_arch} · encendida ${uptime(s.host.uptime_sec)}`) : null);
+    const sec = $("section", { class: "machine" }, head);
+    if (!m.online) sec.append($("div", { class: "error" }, explain(m.error || "")));
+    if (s) {
+      sec.append($("div", { class: "grid" },
+        cpuCard(key, s), memCard(key, s),
+        ...s.gpus.map((g, i) => gpuCard(key, g, i)),
+        s.gpus.length ? null : $("section", { class: "card" }, $("h3", {}, "Gráfica"), $("div", { class: "empty" }, "No se detectó ninguna GPU")),
+        diskCard(s)));
+    }
+    return sec;
+  }));
+}
+
+async function loop() {
+  try {
+    const r = await fetch("/api/stats", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const list = await r.json();
+    recordAll(list, Date.now());
+    // Don't rebuild the DOM under the cursor: it would drop the tooltip.
+    if (!document.querySelector(".spark svg:hover")) render(list);
+    document.getElementById("updated").textContent = "actualizado " + hhmmss(Date.now());
+  } catch (e) {
+    document.getElementById("updated").textContent = "el panel no responde: " + e.message;
+  }
+  setTimeout(loop, POLL_MS);
+}
+loop();
+</script>
+</body>
+</html>

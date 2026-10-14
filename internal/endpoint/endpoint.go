@@ -19,6 +19,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/Solar2004/Astrea/internal/procutil"
 )
 
 // Kind enumerates the handler types a dynamic endpoint can have.
@@ -147,6 +149,7 @@ func (m *Manager) serveExec(w http.ResponseWriter, r *http.Request, spec *Spec) 
 	defer cancel()
 	name, args := shell(spec.Command)
 	cmd := exec.CommandContext(ctx, name, args...)
+	procutil.NoConsole(cmd)
 	cmd.Stdin = r.Body
 	cmd.Env = append(os.Environ(), "ASTREA_QUERY="+r.URL.RawQuery, "ASTREA_METHOD="+r.Method)
 	out, err := cmd.Output()

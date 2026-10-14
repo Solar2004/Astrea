@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/Solar2004/Astrea/internal/procutil"
 	"github.com/Solar2004/Astrea/internal/protocol"
 )
 
@@ -63,6 +64,7 @@ func (Exec) Invoke(ctx context.Context, payload json.RawMessage, emit Emit) (any
 	name, args := shell(req.Command)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = req.Cwd
+	procutil.NoConsole(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
