@@ -15,12 +15,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/Solar2004/Astrea/internal/procutil"
+	"github.com/Solar2004/Astrea/internal/shell"
 )
 
 // Kind enumerates the handler types a dynamic endpoint can have.
@@ -43,6 +43,8 @@ type Spec struct {
 	Kind Kind   `json:"kind"`
 	// Command is used by KindExec. The request body arrives on stdin.
 	Command string `json:"command,omitempty"`
+	// Shell selects the interpreter for Command (see package shell).
+	Shell string `json:"shell,omitempty"`
 	// Target is the base URL used by KindProxy, e.g. http://127.0.0.1:11434.
 	Target string `json:"target,omitempty"`
 	// Body/ContentType are used by KindStatic.
@@ -76,8 +78,9 @@ func (m *Manager) Create(s *Spec) error {
 			return fmt.Errorf("exec endpoint requires command")
 		}
 	case KindProxy:
-		if _, err := url.Parse(s.Target); err != nil || s.Target == "" {
-			return fmt.Errorf("proxy endpoint requires a valid target url")
+		u, err := url.Parse(s.Target)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("proxy endpoint requires an http(s) target url with a host, e.g. http://127.0.0.1:11434")
 		}
 	case KindStatic:
 		// body may be empty
@@ -147,7 +150,11 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (m *Manager) serveExec(w http.ResponseWriter, r *http.Request, spec *Spec) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
-	name, args := shell(spec.Command)
+	name, args, err := shell.Command(spec.Shell, spec.Command)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	procutil.NoConsole(cmd)
 	cmd.Stdin = r.Body
@@ -188,13 +195,6 @@ func splitName(path string) (name, rest string) {
 	return p, "/"
 }
 
-func shell(command string) (string, []string) {
-	if runtime.GOOS == "windows" {
-		return "cmd", []string{"/C", command}
-	}
-	return "/bin/sh", []string{"-c", command}
-}
-
 func (m *Manager) load() {
 	if m.store == "" {
 		return
@@ -221,5 +221,6 @@ func (m *Manager) save() {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(m.store, data, 0o644)
+	// 0600: specs hold shell commands the agent will run.
+	_ = os.WriteFile(m.store, data, 0o600)
 }

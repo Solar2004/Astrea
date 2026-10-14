@@ -65,9 +65,9 @@ func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
 // Error codes used across capabilities.
 const (
-	CodeUnauthorized = "unauthorized"
+	CodeUnauthorized  = "unauthorized"
 	CodeUnknownMethod = "unknown_method"
-	CodeBadRequest   = "bad_request"
-	CodeInternal     = "internal"
-	CodeDenied       = "denied"
+	CodeBadRequest    = "bad_request"
+	CodeInternal      = "internal"
+	CodeDenied        = "denied"
 )

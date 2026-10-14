@@ -27,6 +27,7 @@ func (EndpointCreate) Describe() Descriptor {
 				"name": {"type": "string", "description": "Route name; served at /dyn/<name>."},
 				"kind": {"type": "string", "enum": ["exec", "proxy", "static"]},
 				"command": {"type": "string", "description": "exec: shell command. Request body arrives on stdin; query string in $ASTREA_QUERY."},
+				"shell": {"type": "string", "enum": ["default", "cmd", "powershell", "pwsh", "sh", "bash", "python", "node"], "description": "exec: shell for command."},
 				"target": {"type": "string", "description": "proxy: base URL, e.g. http://127.0.0.1:11434"},
 				"body": {"type": "string", "description": "static: response body."},
 				"content_type": {"type": "string", "description": "static: Content-Type header."}

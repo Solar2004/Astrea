@@ -50,3 +50,15 @@ func TestCreateValidation(t *testing.T) {
 		t.Fatal("unknown kind should error")
 	}
 }
+
+func TestProxyTargetValidation(t *testing.T) {
+	m := NewManager("")
+	for _, bad := range []string{"", "127.0.0.1:11434", "file:///etc/passwd", "http://"} {
+		if err := m.Create(&Spec{Name: "p", Kind: KindProxy, Target: bad}); err == nil {
+			t.Errorf("target %q should be rejected", bad)
+		}
+	}
+	if err := m.Create(&Spec{Name: "p", Kind: KindProxy, Target: "http://127.0.0.1:11434"}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"io"
 	"os/exec"
-	"runtime"
 	"sync"
 
 	"github.com/Solar2004/Astrea/internal/procutil"
 	"github.com/Solar2004/Astrea/internal/protocol"
+	"github.com/Solar2004/Astrea/internal/shell"
 )
 
 // Exec runs a shell command on the controlled machine, streaming stdout and
@@ -28,6 +28,7 @@ func (Exec) Describe() Descriptor {
 			"properties": {
 				"command": {"type": "string", "description": "Command line to run via the system shell."},
 				"cwd": {"type": "string", "description": "Working directory. Optional."},
+				"shell": {"type": "string", "enum": ["default", "cmd", "powershell", "pwsh", "sh", "bash", "python", "node"], "description": "Shell or interpreter. Default: cmd on Windows, sh on Linux. Prefer powershell on Windows."},
 				"timeout_sec": {"type": "integer", "description": "Kill the command after this many seconds. 0 = no timeout."}
 			},
 			"required": ["command"]
@@ -38,6 +39,7 @@ func (Exec) Describe() Descriptor {
 type execRequest struct {
 	Command    string `json:"command"`
 	Cwd        string `json:"cwd"`
+	Shell      string `json:"shell"`
 	TimeoutSec int    `json:"timeout_sec"`
 }
 
@@ -61,7 +63,10 @@ func (Exec) Invoke(ctx context.Context, payload json.RawMessage, emit Emit) (any
 		defer cancel()
 	}
 
-	name, args := shell(req.Command)
+	name, args, err := shell.Command(req.Shell, req.Command)
+	if err != nil {
+		return nil, &protocol.Error{Code: protocol.CodeBadRequest, Message: err.Error()}
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = req.Cwd
 	procutil.NoConsole(cmd)
@@ -105,14 +110,6 @@ func pump(wg *sync.WaitGroup, r io.Reader, channel string, emit Emit) {
 	for sc.Scan() {
 		emit(protocol.StreamChunk{Channel: channel, Data: sc.Text() + "\n"})
 	}
-}
-
-// shell returns the platform shell invocation for a command line.
-func shell(command string) (string, []string) {
-	if runtime.GOOS == "windows" {
-		return "cmd", []string{"/C", command}
-	}
-	return "/bin/sh", []string{"-c", command}
 }
 
 func internal(err error) error {
