@@ -164,6 +164,9 @@ func main() {
 		audit.Log("dyn:task."+name, args, err)
 		return res, err
 	}
+	// Dependencies: detect and install git, python, CUDA, ….
+	reg.Register(capability.DepsCheck{})
+	reg.Register(capability.DepsEnsure{})
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
 	reg.Register(capability.AdminStatus{Guard: guard})
