@@ -71,6 +71,13 @@ jobs:
             if (-not $task) { throw "task $t missing" }
             "$t : $($task.Principal.LogonType) $($task.Principal.RunLevel) $($task.State)"
           }
+          # El MSI corre como SYSTEM y SYSTEM no puede registrar la tarea S4U:
+          # debe delegarla en la sesion del usuario. Si esto falla, la
+          # instalacion por MSI perderia el arranque sin sesion.
+          $boot = Get-ScheduledTask -TaskName AstreaAgent
+          if ($boot.Principal.LogonType -ne 'S4U') { throw "AstreaAgent is $($boot.Principal.LogonType), expected S4U (headless mode lost)" }
+          if (-not ($boot.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskBootTrigger' })) { throw 'AstreaAgent has no boot trigger' }
+          if (Get-ScheduledTask -TaskName AstreaSetup -ErrorAction SilentlyContinue) { throw 'temporary AstreaSetup task left behind' }
           Healthz
           $token1 = (Get-Content -Raw "$dir\config.json" | ConvertFrom-Json).token
           if (-not $token1) { throw 'no token in config' }
@@ -99,6 +106,7 @@ jobs:
           New-Item -ItemType Directory -Force logs | Out-Null
           Copy-Item *.log logs -ErrorAction SilentlyContinue
           Copy-Item C:\ProgramData\Astrea\*.log logs -ErrorAction SilentlyContinue
+          Get-ScheduledTask -TaskName Astrea* -ErrorAction SilentlyContinue | Format-List TaskName, State, Principal, Triggers | Out-File logs\tasks.txt
           Copy-Item "$env:TEMP\astrea-uninstall.log" logs -ErrorAction SilentlyContinue
           Copy-Item C:\Windows\Temp\astrea-uninstall.log logs -ErrorAction SilentlyContinue
 

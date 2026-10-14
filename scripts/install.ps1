@@ -34,6 +34,7 @@
     $env:ASTREA_LOCAL_EXE   -> ruta a un astrea-agent.exe ya presente (lo usa el MSI; no descarga)
     $env:ASTREA_ADDR        -> IP en la que escucha el agente SIN usar Tailscale (LAN o pruebas;
                                p. ej. el CI instala el MSI con 127.0.0.1). Normalmente vacio.
+    $env:ASTREA_NO_BRIDGE=1 -> no reintentar el registro de tareas en la sesion del usuario
     $env:ASTREA_MSI=1       -> lo fija el MSI: corre como SYSTEM sin consola, asi que no
                                pregunta nada, no abre el login de Tailscale y deja el log en
                                C:\ProgramData\Astrea\install.log
@@ -59,6 +60,8 @@ $Headless   = $env:ASTREA_HEADLESS -ne '0'
 $RuleName   = 'Astrea Agent'
 $Elevated   = $env:ASTREA_ELEVATED -eq '1'
 $Msi        = $env:ASTREA_MSI -eq '1'
+$NoBridge   = $env:ASTREA_NO_BRIDGE -eq '1'
+$SetupTask  = 'AstreaSetup'
 
 function Step($msg) { Write-Host ""; Write-Host "== $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "   OK  $msg" -ForegroundColor Green }
@@ -390,6 +393,81 @@ function Register-ClassicTask([string]$user) {
   Ok "Tarea '$TaskName' (modo clasico: solo con la sesion iniciada) registrada para $user y arrancada"
 }
 
+function Test-RunningAsSystem {
+  try {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return $id.User.Value -eq 'S-1-5-18'
+  } catch { return $false }
+}
+
+# El MSI ejecuta este script como SYSTEM, y SYSTEM no puede registrar una tarea
+# S4U de otro usuario (el Programador de tareas responde "Acceso denegado"): eso
+# solo lo permite el propio usuario con permisos de administrador. Asi que
+# volvemos a lanzar el instalador dentro de su sesion, mediante una tarea
+# interactiva temporal, y ahi si se registran las dos tareas definitivas.
+function Invoke-SetupInUserSession([string]$user) {
+  Unregister-ScheduledTask -TaskName $SetupTask -Confirm:$false -ErrorAction SilentlyContinue
+  $vars = [ordered]@{
+    ASTREA_NO_BRIDGE = '1'                  # el hijo no vuelve a reintentar
+    ASTREA_USER      = $user
+    ASTREA_LOCAL_EXE = $ExePath             # el binario ya esta puesto
+    ASTREA_ADDR      = $env:ASTREA_ADDR
+    ASTREA_PORT      = $env:ASTREA_PORT
+    ASTREA_GUI_PORT  = $env:ASTREA_GUI_PORT
+    ASTREA_HEADLESS  = $env:ASTREA_HEADLESS
+    ASTREA_REPO      = $env:ASTREA_REPO
+  }
+  $set = ($vars.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object {
+    "`$env:$($_.Key)='$($_.Value -replace "'", "''")'"
+  }) -join '; '
+  $script = Join-Path $InstallDir 'install.ps1'
+  if (-not (Test-Path $script)) {
+    # Instalacion por one-liner: no hay copia en disco, guardamos esta.
+    $src = $null
+    foreach ($p in @($env:ASTREA_SCRIPT, $PSCommandPath)) {
+      if ($p -and (Test-Path $p)) { $src = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8); break }
+    }
+    if (-not $src) { return $false }
+    [IO.File]::WriteAllText($script, $src, (New-Object Text.UTF8Encoding $false))
+  }
+  $cmd = "$set; & '$($script -replace "'", "''")'"
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+
+  $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded" -WorkingDirectory $InstallDir
+  $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+  $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+  try {
+    Register-ScheduledTask -TaskName $SetupTask -Action $action -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null
+    Start-ScheduledTask -TaskName $SetupTask -ErrorAction Stop
+  } catch {
+    Warn "No pude lanzar la configuracion en la sesion de ${user}: $($_.Exception.Message)"
+    Unregister-ScheduledTask -TaskName $SetupTask -Confirm:$false -ErrorAction SilentlyContinue
+    return $false
+  }
+  # Una tarea interactiva solo corre si el usuario tiene sesion iniciada.
+  $ran = $false
+  for ($i = 0; $i -lt 150; $i++) {
+    Start-Sleep 2
+    $info = Get-ScheduledTaskInfo -TaskName $SetupTask -ErrorAction SilentlyContinue
+    $state = (Get-ScheduledTask -TaskName $SetupTask -ErrorAction SilentlyContinue).State
+    if ($state -eq 'Running') { $ran = $true; continue }
+    if ($ran -and $state -eq 'Ready') { break }
+    # Si nunca arranco (sin sesion iniciada), no esperamos los 5 minutos.
+    if (-not $ran -and $i -gt 15 -and $info -and $info.LastRunTime -lt (Get-Date).AddMinutes(-1)) { break }
+  }
+  Unregister-ScheduledTask -TaskName $SetupTask -Confirm:$false -ErrorAction SilentlyContinue
+  if (-not $ran) {
+    Warn "No hay sesion iniciada para ${user}: no pude registrar el arranque sin sesion desde el instalador."
+    return $false
+  }
+  $log = Join-Path $InstallDir 'install-session.log'
+  if (Test-Path $log) {
+    Write-Host "   --- configuracion en la sesion de ${user}:" -ForegroundColor DarkGray
+    Get-Content $log | Where-Object { $_ -match '^(==|   (OK|!!))' } | ForEach-Object { Write-Host "   $_" }
+  }
+  return [bool](Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)
+}
+
 function Register-AgentTask([string]$user) {
   Step "Arranque automatico"
   foreach ($t in @($TaskName, $GuiTask)) {
@@ -410,7 +488,13 @@ function Register-AgentTask([string]$user) {
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType S4U -RunLevel Highest
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings (New-AgentTaskSettings) -ErrorAction Stop | Out-Null
   } catch {
-    Warn "Windows no acepto la tarea sin sesion para $user ($($_.Exception.Message))."
+    $why = $_.Exception.Message
+    if (-not $NoBridge -and (Test-RunningAsSystem)) {
+      Warn "SYSTEM no puede registrar la tarea sin sesion; lo hago desde la sesion de $user."
+      if (Invoke-SetupInUserSession $user) { return }
+    } else {
+      Warn "Windows no acepto la tarea sin sesion para ${user}: $why"
+    }
     Warn "Uso el modo clasico: el agente solo funcionara con la sesion iniciada."
     Register-ClassicTask $user
     return
@@ -532,7 +616,7 @@ astrea-panel --ws ws://${ip}:$Port/ws --token $token
 function Uninstall-Astrea {
   Step "Desinstalando Astrea"
   Stop-Agent
-  foreach ($t in @($TaskName, $GuiTask)) {
+  foreach ($t in @($TaskName, $GuiTask, $SetupTask)) {
     Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
   }
   Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
@@ -584,10 +668,12 @@ function Install-Astrea {
 
 $failed = $false
 $transcript = $false
-if ($Msi) {
+if ($Msi -or $NoBridge) {
   # Sin consola: todo lo que imprime el instalador va a un log. Al desinstalar
-  # va a TEMP, porque la carpeta de Astrea se borra.
+  # va a TEMP, porque la carpeta de Astrea se borra. La pasada que corre en la
+  # sesion del usuario escribe su propio log para no pelearse por el archivo.
   $msiLog = if ($env:ASTREA_UNINSTALL -eq '1') { Join-Path $env:TEMP 'astrea-uninstall.log' } else { Join-Path $InstallDir 'install.log' }
+  if ($NoBridge) { $msiLog = Join-Path $InstallDir 'install-session.log' }
   try {
     New-Item -ItemType Directory -Force -Path (Split-Path $msiLog) | Out-Null
     Start-Transcript -Path $msiLog -Force | Out-Null
@@ -601,11 +687,11 @@ try {
   Write-Host ""
   Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
 } finally {
-  if ($Elevated -and -not $Msi) {
+  if ($Elevated -and -not ($Msi -or $NoBridge)) {
     Write-Host ""
     Read-Host "Pulsa Enter para cerrar esta ventana" | Out-Null
   }
   if ($transcript) { try { Stop-Transcript | Out-Null } catch {} }
 }
-if ($Elevated -or $Msi) { exit ([int]$failed) }
+if ($Elevated -or $Msi -or $NoBridge) { exit ([int]$failed) }
 }
