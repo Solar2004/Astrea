@@ -35,8 +35,11 @@ máquina e ignoran el archivo.
   task definida en una máquina concreta), se enruta sola.
 - `astrea.fleet.status` (lo sirve el hub, no un agente) devuelve, por máquina:
   online, OS, modo, CPU/RAM, GPUs con VRAM libre, `user_active` + proceso en
-  primer plano, y los servicios. Es lo que la IA mira para decidir dónde correr
-  algo pesado sin molestar a quien esté usando la PC.
+  primer plano, `desktop` (false = agente headless sin sesión: no hay
+  pantalla/mouse/teclado, pero está libre para GPU), y los servicios. Es lo que
+  la IA mira para decidir dónde correr algo pesado sin molestar a quien esté
+  usando la PC. Un agente sin escritorio (ver [`HEADLESS.md`](HEADLESS.md))
+  aparece online con `desktop:false`.
 
 Las capacidades se cachean por máquina en disco, así que las tools aparecen al
 instante aunque una PC esté apagada; el hub resincroniza cada 30 s y publica

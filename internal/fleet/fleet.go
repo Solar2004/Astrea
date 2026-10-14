@@ -176,21 +176,25 @@ type Service struct {
 
 // Status is one node's snapshot.
 type Status struct {
-	Name       string    `json:"name"`
-	Online     bool      `json:"online"`
-	Error      string    `json:"error,omitempty"`
-	Hostname   string    `json:"hostname,omitempty"`
-	OS         string    `json:"os,omitempty"`
-	Mode       string    `json:"mode,omitempty"`
-	Locked     bool      `json:"locked,omitempty"`
-	CPUPercent float64   `json:"cpu_percent"`
-	RAMPercent float64   `json:"ram_percent"`
-	RAMFreeGiB float64   `json:"ram_free_gib"`
-	GPUs       []GPU     `json:"gpus,omitempty"`
-	UserActive *bool     `json:"user_active,omitempty"`
-	IdleSec    *float64  `json:"idle_sec,omitempty"`
-	Foreground string    `json:"foreground_process,omitempty"`
-	Services   []Service `json:"services,omitempty"`
+	Name       string   `json:"name"`
+	Online     bool     `json:"online"`
+	Error      string   `json:"error,omitempty"`
+	Hostname   string   `json:"hostname,omitempty"`
+	OS         string   `json:"os,omitempty"`
+	Mode       string   `json:"mode,omitempty"`
+	Locked     bool     `json:"locked,omitempty"`
+	CPUPercent float64  `json:"cpu_percent"`
+	RAMPercent float64  `json:"ram_percent"`
+	RAMFreeGiB float64  `json:"ram_free_gib"`
+	GPUs       []GPU    `json:"gpus,omitempty"`
+	UserActive *bool    `json:"user_active,omitempty"`
+	IdleSec    *float64 `json:"idle_sec,omitempty"`
+	Foreground string   `json:"foreground_process,omitempty"`
+	// Desktop is false when the machine is online but has no interactive
+	// session (headless agent, nobody logged in): screen/mouse/keyboard are
+	// unavailable, but it is free for GPU work.
+	Desktop  *bool     `json:"desktop,omitempty"`
+	Services []Service `json:"services,omitempty"`
 }
 
 // StatusAll snapshots every node in parallel. Offline nodes are reported, not
@@ -277,9 +281,15 @@ func (n *Node) Status(ctx context.Context) Status {
 		IdleSec    float64 `json:"idle_sec"`
 		Process    string  `json:"process"`
 		UserActive bool    `json:"user_active"`
+		Session    string  `json:"session"`
 	}
 	run("sys.idle", &idle, func() {
-		st.IdleSec, st.UserActive, st.Foreground = &idle.IdleSec, &idle.UserActive, idle.Process
+		st.UserActive, st.Foreground = &idle.UserActive, idle.Process
+		desktop := idle.Session != "none"
+		st.Desktop = &desktop
+		if desktop {
+			st.IdleSec = &idle.IdleSec
+		}
 	})
 
 	var svcs struct {

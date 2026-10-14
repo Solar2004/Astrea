@@ -1,8 +1,10 @@
 package fleet
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +56,18 @@ func TestLoadFallsBackToPanelJSON(t *testing.T) {
 	// Neither file: ErrNoConfig.
 	if _, err := Load(filepath.Join(t.TempDir(), "machines.json")); err != ErrNoConfig {
 		t.Fatalf("want ErrNoConfig, got %v", err)
+	}
+}
+
+func TestStatusMarshalsDesktopFlag(t *testing.T) {
+	// A headless node: online, but Desktop=false and no IdleSec.
+	no := false
+	st := Status{Name: "pc", Online: true, Desktop: &no}
+	b, _ := json.Marshal(st)
+	if !strings.Contains(string(b), `"desktop":false`) {
+		t.Fatalf("desktop flag not surfaced: %s", b)
+	}
+	if strings.Contains(string(b), `"idle_sec"`) {
+		t.Fatalf("headless node must not report idle_sec: %s", b)
 	}
 }
