@@ -12,9 +12,11 @@
            Version="$(var.Version)"
            UpgradeCode="4F87E493-748F-45E2-B5E5-05C0868DC75A"
            Scope="perMachine">
-    <!-- afterInstallInitialize: la version vieja se quita dentro de la misma
-         transaccion, despues de StopAgent, asi su exe ya no esta en uso. -->
-    <MajorUpgrade Schedule="afterInstallInitialize"
+    <!-- afterInstallExecute: la version vieja se quita al final, cuando los
+         archivos nuevos ya estan escritos (los componentes comparten GUID, asi
+         que no se borran). Con afterInstallInitialize + StopAgent delante,
+         Windows Installer rechaza la secuencia (error 2613). -->
+    <MajorUpgrade Schedule="afterInstallExecute"
                   DowngradeErrorMessage="Ya hay una version mas reciente de Astrea instalada." />
     <MediaTemplate EmbedCab="yes" />
 
@@ -72,7 +74,7 @@
     <InstallExecuteSequence>
       <!-- Antes de tocar archivos: si el agente corre, su exe esta bloqueado y
            Windows dejaria la actualizacion pendiente de reinicio. -->
-      <Custom Action="StopAgent" Before="RemoveExistingProducts" />
+      <Custom Action="StopAgent" After="InstallInitialize" />
       <!-- Tambien en reparacion: vuelve a registrar tareas/firewall. -->
       <Custom Action="RunInstall" After="InstallFiles" Condition="NOT REMOVE=&quot;ALL&quot;" />
       <!-- No en una actualizacion: el MSI viejo se desinstala y borraria la
