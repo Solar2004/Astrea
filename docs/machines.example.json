@@ -1,0 +1,6 @@
+{
+  "machines": [
+    {"name": "pc-sala",   "ws": "ws://100.101.1.1:7700/ws", "token": "PEGA_AQUI_EL_TOKEN_DE_ESTA_PC"},
+    {"name": "pc-cuarto", "ws": "ws://100.101.1.2:7700/ws", "token": "PEGA_AQUI_EL_TOKEN_DE_ESTA_PC"}
+  ]
+}

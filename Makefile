@@ -4,6 +4,8 @@ BIN := bin
 
 all: agent hub panel
 
+# Gateway y hub comparten binario (astrea-hub gateway). No hay target aparte.
+
 agent:
 	go build -o $(BIN)/astrea-agent ./cmd/astrea-agent
 

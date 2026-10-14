@@ -63,6 +63,10 @@ IA. Capas actuales y pendientes:
 - **Tasks**: automatizaciones definidas por la IA (`task.define`, kinds
   `script`/`macro`), cada una publicada como tool MCP en vivo y opcionalmente
   como `/dyn/<name>`. **✓ hecho** — ver [`TASKS.md`](TASKS.md).
+- **Flota**: el hub lee `machines.json` y expone todas las PCs con un argumento
+  `machine` por tool; `astrea.fleet.status` resume la flota. `astrea-hub gateway`
+  da una API OpenAI única sobre los modelos expuestos. **✓ hecho** — ver
+  [`FLEET.md`](FLEET.md).
 - **F4** *(siguiente)* Servicios/IA: `service.spawn` para procesos de larga vida
   (ollama/llama.cpp) con seguimiento, y helpers de instalación de paquetes.
   Hoy ya es posible vía `exec` + `endpoint.create` kind=proxy.

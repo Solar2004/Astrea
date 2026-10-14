@@ -82,6 +82,7 @@ make test       # tests
 | `astrea.task.define/list/get/delete/run` | Automatizaciones creadas por la IA; cada una es su propia tool `astrea.task.<name>` |
 | `astrea.endpoint.create/list/delete` | APIs HTTP dinámicas en `/dyn/<name>` (exec/proxy/static/task) |
 | `astrea.admin.lock/status/stop` | Kill switch y control del agente                 |
+| `astrea.fleet.status` | (hub) Resumen de todas las PCs: online, CPU/RAM, GPUs con VRAM libre, quién está activo, servicios |
 
 ### Endpoints dinámicos — el diferenciador
 
@@ -109,6 +110,41 @@ aparece como una tool nueva (`astrea.task.<name>`), sin reiniciar nada. Dos tipo
   pantalla").
 
 Persisten entre reinicios. Ejemplos completos en [`docs/TASKS.md`](docs/TASKS.md).
+
+## Varias PCs — una flota
+
+El hub maneja todas tus PCs a la vez. Crea `~/.config/astrea/machines.json`
+(el instalador imprime el bloque de cada máquina):
+
+```json
+{"machines": [
+  {"name": "pc-sala",  "ws": "ws://100.101.1.1:7700/ws", "token": "…"},
+  {"name": "pc-cuarto","ws": "ws://100.101.1.2:7700/ws", "token": "…"}
+]}
+```
+
+Con más de una máquina, cada herramienta gana un argumento `machine`, y
+`astrea.fleet.status` da el panorama (GPU libre, quién está jugando) para que
+la IA decida dónde correr cada cosa. Una sola PC funciona igual que antes, sin
+`machine`. El panel web (`astrea-panel`) lee el mismo archivo.
+
+### Gateway de modelos — todos los modelos locales como una sola API
+
+```sh
+astrea-hub gateway    # OpenAI-compatible en http://127.0.0.1:7788/v1
+```
+
+Cada servicio con `expose` (p.ej. llama-server o ollama en varias PCs) aparece
+como un modelo `"<pc>/<endpoint>"`. Apunta cualquier cliente OpenAI al gateway
+y elige la PC por el nombre del modelo:
+
+```sh
+curl http://127.0.0.1:7788/v1/models
+curl http://127.0.0.1:7788/v1/chat/completions   -d '{"model": "pc-cuarto/llm", "messages": [{"role":"user","content":"hola"}]}'
+```
+
+Para servidores que exigen el nombre real del modelo (ollama), añádelo tras dos
+puntos: `"model": "pc-cuarto/llm:qwen2.5:7b"`. Detalle en [`docs/FLEET.md`](docs/FLEET.md).
 
 ## Modos
 
