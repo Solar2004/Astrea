@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"io/fs"
 	"log"
 	"net"
@@ -54,8 +53,12 @@ type machineStatus struct {
 }
 
 type panel struct {
+	ws, token, name, cfgPath string
+	logger                   *log.Logger
+
+	mu       sync.Mutex
 	machines []Machine
-	clients  []*transport.ReconnectingClient
+	clients  map[string]*transport.ReconnectingClient // keyed by ws URL, reused across reloads
 }
 
 func main() {
@@ -69,13 +72,12 @@ func main() {
 
 	logger := log.New(os.Stderr, "astrea-panel ", log.LstdFlags)
 
-	machines, err := loadMachines(*ws, *token, *name, *cfgPath)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	p := &panel{machines: machines}
-	for _, m := range machines {
-		p.clients = append(p.clients, transport.NewReconnecting(m.WS, m.Token))
+	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}}
+	// Load once now (for the startup log), but the stats handler reloads on
+	// every request, so adding machines to panel.json needs no restart and an
+	// empty/missing config is not fatal — the panel just shows nothing yet.
+	if n := len(p.reload()); n == 0 {
+		logger.Printf("no machines yet (add them to %s; the panel picks them up live)", *cfgPath)
 	}
 
 	static, _ := fs.Sub(webFS, "web")
@@ -88,44 +90,62 @@ func main() {
 		logger.Fatalf("listen %s: %v", *listen, err)
 	}
 	url := "http://" + ln.Addr().String()
-	logger.Printf("astrea-panel %s: %d machine(s) — open %s", version, len(machines), url)
+	logger.Printf("astrea-panel %s: %d machine(s) — open %s", version, len(p.machines), url)
 	if *open {
 		go openBrowser(url)
 	}
 	logger.Fatal(http.Serve(ln, mux))
 }
 
-func loadMachines(ws, token, name, cfgPath string) ([]Machine, error) {
+// reload re-reads the machine list (--ws, else the config file, else none),
+// reusing existing clients and dialing new ones. It never fails: a missing or
+// bad config means zero machines until it is fixed. Returns the current list.
+func (p *panel) reload() []Machine {
+	machines := loadMachines(p.ws, p.token, p.name, p.cfgPath, p.logger)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, m := range machines {
+		if _, ok := p.clients[m.WS]; !ok {
+			p.clients[m.WS] = transport.NewReconnecting(m.WS, m.Token)
+		}
+	}
+	p.machines = machines
+	return machines
+}
+
+// loadMachines resolves the machine list without failing: on any problem it
+// logs once and returns nil.
+func loadMachines(ws, token, name, cfgPath string, logger *log.Logger) []Machine {
 	if ws != "" {
-		return []Machine{{Name: name, WS: ws, Token: token}}, nil
+		return []Machine{{Name: name, WS: ws, Token: token}}
 	}
 	data, err := os.ReadFile(cfgPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("no machines: pass --ws and --token, or create %s with {\"machines\":[{\"name\":\"windows\",\"ws\":\"ws://100.x.y.z:7700/ws\",\"token\":\"...\"}]}", cfgPath)
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		logger.Printf("read %s: %v", cfgPath, err)
+		return nil
 	}
 	var c panelConfig
 	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("%s: %w", cfgPath, err)
+		logger.Printf("%s: %v", cfgPath, err)
+		return nil
 	}
-	if len(c.Machines) == 0 {
-		return nil, fmt.Errorf("%s lists no machines", cfgPath)
-	}
-	return c.Machines, nil
+	return c.Machines
 }
 
 // handleStats polls every machine in parallel and returns their snapshots.
 func (p *panel) handleStats(w http.ResponseWriter, r *http.Request) {
-	out := make([]machineStatus, len(p.machines))
+	machines := p.reload() // pick up panel.json edits without a restart
+	out := make([]machineStatus, len(machines))
 	var wg sync.WaitGroup
-	for i := range p.machines {
+	for i, m := range machines {
 		wg.Add(1)
-		go func(i int) {
+		go func(i int, m Machine) {
 			defer wg.Done()
-			out[i] = p.poll(r.Context(), i)
-		}(i)
+			out[i] = p.poll(r.Context(), m)
+		}(i, m)
 	}
 	wg.Wait()
 	w.Header().Set("Content-Type", "application/json")
@@ -133,11 +153,18 @@ func (p *panel) handleStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (p *panel) poll(ctx context.Context, i int) machineStatus {
-	st := machineStatus{Name: p.machines[i].Name}
+func (p *panel) poll(ctx context.Context, m Machine) machineStatus {
+	st := machineStatus{Name: m.Name}
+	p.mu.Lock()
+	client := p.clients[m.WS]
+	p.mu.Unlock()
+	if client == nil {
+		st.Error = "no client"
+		return st
+	}
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	res, err := p.clients[i].Call(ctx, "sys.stats", map[string]any{})
+	res, err := client.Call(ctx, "sys.stats", map[string]any{})
 	if err != nil {
 		st.Error = err.Error()
 		return st
