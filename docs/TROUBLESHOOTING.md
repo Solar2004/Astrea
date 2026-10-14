@@ -38,6 +38,14 @@ curl.exe http://127.0.0.1:7700/healthz          # debe decir: ok
 Get-Content "$env:ProgramData\Astrea\agent.log" -Tail 50 -Wait
 ```
 
+## Vienes del MSI 0.2.0 (roto)
+
+El MSI de la release **0.2.0** fallaba siempre (error 1603). Usa el de **0.2.1
+o posterior**. Si llegaste a instalar el 0.2.0: desinstálalo primero desde
+*Configuración → Aplicaciones → Astrea Agent → Desinstalar* y luego instala el
+0.2.1. Si quedó a medias, volver a pasar el `install.ps1` (el one-liner) por
+encima también lo deja bien.
+
 ## El agente no arranca: Windows bloquea el .exe sin firmar
 
 En un PC con **Smart App Control** o **WDAC/AppLocker** (habitual en Windows 11
