@@ -16,14 +16,17 @@ public internet. Defense in depth, outermost first:
 2. **Bearer token.** Every control-channel request and capability query
    requires `Authorization: Bearer <token>`, compared in constant time. The
    installer generates a 256-bit token per machine.
-3. **Authorization guard.** Optional `allow`/`deny` method lists in the agent
+3. **Permission mode.** `"mode": "yolo"` (the default) allows every
+   capability; `"mode": "readonly"` only allows observation (files, stats,
+   screen, logs). An unknown mode is treated as readonly.
+4. **Authorization guard.** Optional `allow`/`deny` method lists in the agent
    config restrict which capabilities are callable (`"task.*"`-style
    wildcards supported). AI-defined tasks are checked per step, so a macro
    cannot reach a capability the guard denies.
-4. **Kill switch.** `admin.lock` denies every non-admin capability instantly;
+5. **Kill switch.** `admin.lock` denies every non-admin capability instantly;
    `admin.stop` shuts the agent down. Both are callable by the operator through
    Hermes.
-5. **Audit log.** Every invocation — including each step of a task — is
+6. **Audit log.** Every invocation — including each step of a task — is
    appended as JSON to `audit.log` in the agent data directory (method,
    arguments truncated to 2 KiB, timestamp, success/error).
 

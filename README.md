@@ -74,6 +74,11 @@ make test       # tests
 | `astrea.mouse.move/click` | Mover y hacer clic con el mouse                        |
 | `astrea.key.type`     | Escribir texto por teclado                                 |
 | `astrea.screen.capture` | Captura de pantalla — la IA la recibe como imagen        |
+| `astrea.service.start/stop/status/logs` | Servidores supervisados (ollama, llama-server, ComfyUI): reinicio, autoarranque, `expose` a `/dyn` |
+| `astrea.job.start/status/logs/cancel` | Tareas largas en segundo plano (instalar torch, convertir modelos) |
+| `astrea.deps.check/ensure` | Detecta e instala git, python, CUDA… (winget / apt / pacman) |
+| `astrea.sys.idle`     | ¿Hay alguien usando la PC? Inactividad y ventana/juego en primer plano |
+| `astrea.power.awake/wake/action` | No suspender mientras sirve modelos, Wake-on-LAN, bloquear/reiniciar/apagar |
 | `astrea.task.define/list/get/delete/run` | Automatizaciones creadas por la IA; cada una es su propia tool `astrea.task.<name>` |
 | `astrea.endpoint.create/list/delete` | APIs HTTP dinámicas en `/dyn/<name>` (exec/proxy/static/task) |
 | `astrea.admin.lock/status/stop` | Kill switch y control del agente                 |
@@ -104,6 +109,18 @@ aparece como una tool nueva (`astrea.task.<name>`), sin reiniciar nada. Dos tipo
   pantalla").
 
 Persisten entre reinicios. Ejemplos completos en [`docs/TASKS.md`](docs/TASKS.md).
+
+## Modos
+
+`"mode"` en la config del agente:
+
+- **`yolo`** (por defecto): la IA puede usar todas las capacidades.
+- **`readonly`**: solo observar (archivos, stats, pantalla, logs, estado de
+  servicios). Útil para PCs de otras personas.
+
+`allow`/`deny` afinan cualquiera de los dos; `admin.lock` (kill switch) siempre
+funciona. `"keep_awake": "auto"` (por defecto) impide que la PC se suspenda
+mientras corre un servicio o job, así los modelos locales siguen disponibles.
 
 ## Seguridad
 

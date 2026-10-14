@@ -22,6 +22,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/capability"
 	"github.com/Solar2004/Astrea/internal/config"
 	"github.com/Solar2004/Astrea/internal/endpoint"
+	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
 	"github.com/Solar2004/Astrea/internal/supervise"
@@ -115,7 +116,10 @@ func main() {
 	defer stop()
 
 	// Security: guard (allow/deny + kill switch) and audit log.
-	guard := security.NewGuard(cfg.Allow, cfg.Deny)
+	if cfg.Mode == "" {
+		cfg.Mode = config.ModeYolo
+	}
+	guard := security.NewGuard(cfg.EffectiveAllow(), cfg.Deny)
 	audit, err := security.NewAudit(filepath.Join(cfg.DataDir, "audit.log"))
 	if err != nil {
 		logger.Printf("audit log disabled: %v", err)
@@ -182,9 +186,30 @@ func main() {
 	reg.Register(capability.ServiceStatus{Svcs: svcs})
 	reg.Register(capability.ServiceLogs{Svcs: svcs})
 	go svcs.StartAll()
+	// Power: keep the PC awake while it serves (auto), detect a present user.
+	keeper, err := power.NewKeeper(cfg.KeepAwake, func() bool {
+		for _, s := range svcs.List() {
+			if s.State == "running" || s.State == "starting" || s.State == "backoff" {
+				return true
+			}
+		}
+		for _, j := range jobs.List() {
+			if j.State == supervise.JobRunning {
+				return true
+			}
+		}
+		return false
+	})
+	if err != nil {
+		logger.Fatalf("keep_awake: %v", err)
+	}
+	reg.Register(capability.SysIdle{})
+	reg.Register(capability.PowerAwake{Keeper: keeper})
+	reg.Register(capability.PowerWake{})
+	reg.Register(capability.PowerAction{})
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
-	reg.Register(capability.AdminStatus{Guard: guard})
+	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode})
 	reg.Register(capability.AdminStop{Stop: stop})
 
 	tok := auth.New(cfg.Token)
@@ -200,7 +225,7 @@ func main() {
 		if ln == nil {
 			return
 		}
-		logger.Printf("astrea-agent %s listening on %s with %d capabilities (data dir %s)", version, cfg.Addr, len(reg.Descriptors()), cfg.DataDir)
+		logger.Printf("astrea-agent %s listening on %s with %d capabilities, mode %s (data dir %s)", version, cfg.Addr, len(reg.Descriptors()), cfg.Mode, cfg.DataDir)
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			logger.Fatalf("serve: %v", err)
 		}

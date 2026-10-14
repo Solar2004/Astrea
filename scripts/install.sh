@@ -52,7 +52,9 @@ YAML
 {
   "addr": "${IP}:${PORT}",
   "token": "${TOKEN}",
-  "data_dir": "${CFGDIR}"
+  "data_dir": "${CFGDIR}",
+  "mode": "yolo",
+  "keep_awake": "auto"
 }
 JSON
     # systemd --user service.

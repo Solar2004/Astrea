@@ -20,3 +20,20 @@ func TestLoadAcceptsUTF8BOM(t *testing.T) {
 		t.Fatalf("got %+v", c)
 	}
 }
+
+func TestEffectiveAllow(t *testing.T) {
+	if got := (&Config{}).EffectiveAllow(); len(got) != 0 {
+		t.Fatalf("yolo (default) must not restrict anything, got %v", got)
+	}
+	ro := (&Config{Mode: ModeReadOnly, Allow: []string{"task.hora"}}).EffectiveAllow()
+	has := map[string]bool{}
+	for _, m := range ro {
+		has[m] = true
+	}
+	if !has["fs.read"] || !has["task.hora"] || has["exec"] {
+		t.Fatalf("readonly allow list wrong: %v", ro)
+	}
+	if typo := (&Config{Mode: "yollo"}).EffectiveAllow(); len(typo) == 0 {
+		t.Fatal("an unknown mode must fall back to readonly, not to yolo")
+	}
+}

@@ -273,16 +273,29 @@ function Install-AgentBinary {
 function Write-AgentConfig([string]$ip) {
   Step "Configuracion"
   $token = $env:ASTREA_TOKEN
-  if (-not $token -and (Test-Path $CfgPath)) {
-    try { $token = (Get-Content -Raw $CfgPath | ConvertFrom-Json).token } catch {}
-    if ($token) { Ok "Conservo el token existente (el hub ya configurado sigue valiendo)" }
+  $old = $null
+  if (Test-Path $CfgPath) {
+    try { $old = Get-Content -Raw $CfgPath | ConvertFrom-Json } catch {}
+  }
+  if (-not $token -and $old -and $old.token) {
+    $token = $old.token
+    Ok "Conservo el token existente (el hub ya configurado sigue valiendo)"
   }
   if (-not $token) {
     $bytes = New-Object byte[] 32
     [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $token = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
   }
-  $json = [ordered]@{ addr = "${ip}:$Port"; token = $token; data_dir = $InstallDir } | ConvertTo-Json
+  # yolo = la IA puede usar todas las capacidades; readonly = solo observar.
+  # keep_awake auto = no suspender mientras corre un servicio/job (modelos).
+  $cfg = [ordered]@{ addr = "${ip}:$Port"; token = $token; data_dir = $InstallDir; mode = 'yolo'; keep_awake = 'auto' }
+  if ($old) {
+    # Respeta lo que el usuario haya cambiado a mano.
+    foreach ($k in 'mode', 'keep_awake', 'allow', 'deny') {
+      if ($null -ne $old.$k) { $cfg[$k] = $old.$k }
+    }
+  }
+  $json = $cfg | ConvertTo-Json
   # Sin BOM: Set-Content -Encoding UTF8 de PS 5.1 anade BOM.
   [IO.File]::WriteAllText($CfgPath, $json, (New-Object Text.UTF8Encoding $false))
   Ok "Config escrita en $CfgPath"

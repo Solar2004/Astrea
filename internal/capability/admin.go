@@ -36,15 +36,18 @@ func (a AdminLock) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (a
 	return map[string]any{"locked": a.Guard.Locked()}, nil
 }
 
-// AdminStatus reports agent health and lock state.
-type AdminStatus struct{ Guard *security.Guard }
+// AdminStatus reports agent health, permission mode and lock state.
+type AdminStatus struct {
+	Guard *security.Guard
+	Mode  string
+}
 
 func (AdminStatus) Name() string { return "admin.status" }
 
 func (AdminStatus) Describe() Descriptor {
 	return Descriptor{
 		Name:        "admin.status",
-		Description: "Report agent OS, architecture and kill-switch (lock) state.",
+		Description: "Report agent OS, architecture, permission mode (yolo/readonly) and kill-switch (lock) state.",
 		InputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
 	}
 }
@@ -53,6 +56,7 @@ func (a AdminStatus) Invoke(_ context.Context, _ json.RawMessage, _ Emit) (any, 
 	return map[string]any{
 		"os":     runtime.GOOS,
 		"arch":   runtime.GOARCH,
+		"mode":   a.Mode,
 		"locked": a.Guard.Locked(),
 	}, nil
 }

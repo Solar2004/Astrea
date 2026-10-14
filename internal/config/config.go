@@ -23,6 +23,36 @@ type Config struct {
 	Allow []string `json:"allow,omitempty"`
 	// Deny always rejects these methods.
 	Deny []string `json:"deny,omitempty"`
+	// Mode is the default permission profile: "yolo" (default) lets the AI
+	// call every capability; "readonly" only allows observing the machine
+	// (files, stats, screen, logs). Allow/Deny refine either one.
+	Mode string `json:"mode,omitempty"`
+	// KeepAwake is the sleep inhibitor mode: "auto" (default; awake while a
+	// service or job runs), "always" or "off".
+	KeepAwake string `json:"keep_awake,omitempty"`
+}
+
+// Permission modes.
+const (
+	ModeYolo     = "yolo"
+	ModeReadOnly = "readonly"
+)
+
+// ReadOnlyAllow is the allow list applied by ModeReadOnly.
+var ReadOnlyAllow = []string{
+	"fs.list", "fs.read", "sys.*", "proc.list", "screen.capture",
+	"task.list", "task.get", "endpoint.list", "deps.check",
+	"service.status", "service.logs", "job.status", "job.logs",
+}
+
+// EffectiveAllow returns the allow list after applying Mode. An unknown mode
+// is treated as readonly, so a typo never grants more than intended.
+func (c *Config) EffectiveAllow() []string {
+	switch c.Mode {
+	case "", ModeYolo:
+		return c.Allow
+	}
+	return append(append([]string{}, ReadOnlyAllow...), c.Allow...)
 }
 
 // DefaultPath returns the conventional config path for the current OS.
