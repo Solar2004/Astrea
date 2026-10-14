@@ -120,7 +120,7 @@ Persisten entre reinicios. Ejemplos completos en [`docs/TASKS.md`](docs/TASKS.md
 
 `allow`/`deny` afinan cualquiera de los dos; `admin.lock` (kill switch) siempre
 funciona. `"keep_awake": "auto"` (por defecto) impide que la PC se suspenda
-mientras corre un servicio o job, así los modelos locales siguen disponibles.
+mientras corre un servicio, job o descarga, así los modelos locales siguen disponibles.
 
 ## Seguridad
 

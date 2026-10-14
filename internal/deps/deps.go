@@ -357,23 +357,29 @@ func run(ctx context.Context, argv []string, emit Emit) error {
 	if runtime.GOOS != "windows" {
 		cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
+	// io.Pipe writers rather than StdoutPipe: with WaitDelay, Wait returns
+	// shortly after the installer exits even if something it launched (the
+	// Ollama tray app, a service) inherited the output handles.
+	outR, outW := io.Pipe()
+	errR, errW := io.Pipe()
+	cmd.Stdout, cmd.Stderr = outW, errW
+	cmd.WaitDelay = procutil.PipeGrace
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go pipe(&wg, stdout, "stdout", emit)
-	go pipe(&wg, stderr, "stderr", emit)
+	go pipe(&wg, outR, "stdout", emit)
+	go pipe(&wg, errR, "stderr", emit)
+	err = cmd.Wait()
+	outW.Close()
+	errW.Close()
 	wg.Wait()
-	return cmd.Wait()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// The installer itself exited cleanly; only a child kept the pipes.
+		return nil
+	}
+	return err
 }
 
 func pipe(wg *sync.WaitGroup, r io.Reader, channel string, emit Emit) {

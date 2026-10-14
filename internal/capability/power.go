@@ -54,7 +54,7 @@ func (PowerAwake) Name() string { return "power.awake" }
 func (PowerAwake) Describe() Descriptor {
 	return Descriptor{
 		Name: "power.awake",
-		Description: "Keep the controlled machine from sleeping. mode=auto (default): awake while a service or job is running; " +
+		Description: "Keep the controlled machine from sleeping. mode=auto (default): awake while a service, job or download is running; " +
 			"always: never sleep while the agent runs; off: normal power settings. Without mode, reports the current state. " +
 			"The setting is not persisted: the agent's config keep_awake applies on restart.",
 		InputSchema: json.RawMessage(`{

@@ -21,6 +21,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/auth"
 	"github.com/Solar2004/Astrea/internal/capability"
 	"github.com/Solar2004/Astrea/internal/config"
+	"github.com/Solar2004/Astrea/internal/download"
 	"github.com/Solar2004/Astrea/internal/endpoint"
 	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
@@ -186,7 +187,12 @@ func main() {
 	reg.Register(capability.ServiceStatus{Svcs: svcs})
 	reg.Register(capability.ServiceLogs{Svcs: svcs})
 	go svcs.StartAll()
-	// Power: keep the PC awake while it serves (auto), detect a present user.
+	downloads := download.NewManager()
+	defer downloads.StopAll()
+	reg.Register(capability.NetDownload{Mgr: downloads})
+	reg.Register(capability.NetDownloadStatus{Mgr: downloads})
+	reg.Register(capability.NetDownloadCancel{Mgr: downloads})
+	// Power: keep the PC awake while it serves or downloads (auto), detect a present user.
 	keeper, err := power.NewKeeper(cfg.KeepAwake, func() bool {
 		for _, s := range svcs.List() {
 			if s.State == "running" || s.State == "starting" || s.State == "backoff" {
@@ -195,6 +201,11 @@ func main() {
 		}
 		for _, j := range jobs.List() {
 			if j.State == supervise.JobRunning {
+				return true
+			}
+		}
+		for _, d := range downloads.List() {
+			if d.State == download.Running || d.State == download.Verifying {
 				return true
 			}
 		}
