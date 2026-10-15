@@ -54,3 +54,6 @@ func foreground() (title, process string) {
 	}
 	return title, ""
 }
+
+// screenLocked is not detected outside Windows yet.
+func screenLocked(string) bool { return false }

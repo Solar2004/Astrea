@@ -87,22 +87,125 @@ func (k *Keeper) apply() {
 
 // Idle describes user activity on the machine.
 type Idle struct {
+	// IdleSec is the time since the last input made by a person (Astrea's
+	// own clicks and keystrokes do not count).
 	IdleSec float64 `json:"idle_sec"`
 	// Foreground is the focused window title and its process, when known.
 	Foreground string `json:"foreground,omitempty"`
 	Process    string `json:"process,omitempty"`
-	// UserActive is true when there was input in the last threshold seconds.
+	// Locked: the Windows lock screen (or another secure desktop) is up.
+	Locked bool `json:"locked,omitempty"`
+	// UserActive is true when a person is at the machine: unlocked, and
+	// input at two or more moments in the last threshold seconds.
 	UserActive bool `json:"user_active"`
+	// Why explains the verdict in a few words.
+	Why string `json:"why,omitempty"`
 }
 
-// UserIdle returns how long since the last keyboard/mouse input.
+// presence tells a person at the keyboard from everything else that also
+// resets the OS idle timer: Astrea's own input, a display waking up, a desk
+// bump. It samples the last-input time every couple of seconds.
+type presence struct {
+	mu       sync.Mutex
+	injected time.Time   // last input injected by Astrea
+	last     time.Time   // last input time seen
+	human    []time.Time // moments of human input, oldest first
+	started  bool
+}
+
+var pres presence
+
+const (
+	sampleEvery = 2 * time.Second
+	sameMoment  = 3 * time.Second // inputs closer than this are one moment
+	keepHistory = 10 * time.Minute
+)
+
+// MarkInjected records that Astrea just sent mouse or keyboard input, so it
+// is not mistaken for a person.
+func MarkInjected() {
+	pres.mu.Lock()
+	pres.injected = time.Now()
+	pres.mu.Unlock()
+}
+
+// sample folds the current OS idle time into the history of human input.
+func (p *presence) sample(now time.Time, idle time.Duration) {
+	at := now.Add(-idle)
+	if !p.last.IsZero() && at.Sub(p.last).Abs() < 500*time.Millisecond {
+		return // nothing new (jitter of the clock reading)
+	}
+	p.last = at
+	if !p.injected.IsZero() && at.Sub(p.injected).Abs() < 1500*time.Millisecond {
+		return // our own click or keystroke
+	}
+	if n := len(p.human); n > 0 && at.Sub(p.human[n-1]) < sameMoment {
+		p.human[n-1] = at
+	} else {
+		p.human = append(p.human, at)
+	}
+	for len(p.human) > 0 && now.Sub(p.human[0]) > keepHistory {
+		p.human = p.human[1:]
+	}
+}
+
+// verdict: human idle time and whether there were two separate moments of
+// input inside the threshold.
+func (p *presence) verdict(now time.Time, threshold time.Duration) (idle time.Duration, active bool, why string) {
+	n := len(p.human)
+	if n == 0 {
+		return now.Sub(p.last), false, "no input from a person"
+	}
+	idle = now.Sub(p.human[n-1])
+	if idle >= threshold {
+		return idle, false, "no input from a person recently"
+	}
+	if n >= 2 && now.Sub(p.human[n-2]) < threshold {
+		return idle, true, "keyboard/mouse in use"
+	}
+	return idle, false, "a single touch, not someone using it"
+}
+
+func (p *presence) loop() {
+	for range time.Tick(sampleEvery) {
+		if d, err := idleTime(); err == nil {
+			p.mu.Lock()
+			p.sample(time.Now(), d)
+			p.mu.Unlock()
+		}
+	}
+}
+
+// UserIdle reports whether a person is using the machine. The first call
+// starts a background sampler; until it has history, any recent input counts.
 func UserIdle(activeThreshold time.Duration) (Idle, error) {
 	d, err := idleTime()
 	if err != nil {
 		return Idle{}, err
 	}
+	now := time.Now()
 	title, proc := foreground()
-	return Idle{IdleSec: d.Seconds(), Foreground: title, Process: proc, UserActive: d < activeThreshold}, nil
+	out := Idle{Foreground: title, Process: proc}
+
+	pres.mu.Lock()
+	fresh := !pres.started
+	if fresh {
+		pres.started = true
+		go pres.loop()
+	}
+	pres.sample(now, d)
+	idle, active, why := pres.verdict(now, activeThreshold)
+	pres.mu.Unlock()
+	if fresh && d < activeThreshold && len(pres.human) > 0 {
+		active, why = true, "recent input (no history yet)"
+	}
+	out.IdleSec = idle.Seconds()
+
+	if screenLocked(proc) {
+		out.Locked, active, why = true, false, "the lock screen is up"
+	}
+	out.UserActive, out.Why = active, why
+	return out, nil
 }
 
 // Wake sends a Wake-on-LAN magic packet for mac to the broadcast address

@@ -5,6 +5,7 @@ package power
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -95,4 +96,32 @@ func foreground() (title, process string) {
 		}
 	}
 	return title, process
+}
+
+var (
+	procOpenInputDesktop   = user32.NewProc("OpenInputDesktop")
+	procCloseDesktop       = user32.NewProc("CloseDesktop")
+	procGetUserObjectInfoW = user32.NewProc("GetUserObjectInformationW")
+)
+
+// screenLocked: the lock screen is up. LockApp.exe is the lock curtain; when
+// the password/PIN box or a UAC prompt is showing, input goes to a secure
+// desktop ("Winlogon") we cannot even open.
+func screenLocked(process string) bool {
+	if strings.EqualFold(process, "LockApp.exe") {
+		return true
+	}
+	const desktopReadObjects = 0x0001
+	h, _, _ := procOpenInputDesktop.Call(0, 0, desktopReadObjects)
+	if h == 0 {
+		return true
+	}
+	defer procCloseDesktop.Call(h)
+	const uoiName = 2
+	buf := make([]uint16, 64)
+	var n uint32
+	if r, _, _ := procGetUserObjectInfoW.Call(h, uoiName, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)*2), uintptr(unsafe.Pointer(&n))); r == 0 {
+		return false
+	}
+	return !strings.EqualFold(windows.UTF16ToString(buf), "Default")
 }

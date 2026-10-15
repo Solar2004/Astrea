@@ -19,9 +19,10 @@ func (SysIdle) Name() string { return "sys.idle" }
 func (SysIdle) Describe() Descriptor {
 	return Descriptor{
 		Name: "sys.idle",
-		Description: "Is someone using the controlled machine? Returns seconds since the last keyboard/mouse input, " +
-			"the focused window and its process (e.g. RobloxPlayerBeta.exe), and user_active. " +
-			"Check it before heavy GPU work on a personal PC.",
+		Description: "Is someone using the controlled machine? Returns seconds since a person last used the keyboard/mouse " +
+			"(Astrea's own input does not count), the focused window and its process (e.g. RobloxPlayerBeta.exe), " +
+			"locked (the lock screen is up: nobody is using it), user_active and why. An app left open with nobody " +
+			"touching the PC is not active; neither is a single touch. Check it before heavy GPU work on a personal PC.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {"active_threshold_sec": {"type": "integer", "description": "Input within this many seconds counts as active. Default 120."}}

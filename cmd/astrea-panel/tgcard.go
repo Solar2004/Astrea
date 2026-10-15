@@ -523,6 +523,7 @@ func cardFrom(s machineStatus) cardMachine {
 	var idle struct {
 		Session    string  `json:"session"`
 		UserActive bool    `json:"user_active"`
+		Locked     bool    `json:"locked"`
 		IdleSec    float64 `json:"idle_sec"`
 		Process    string  `json:"process"`
 	}
@@ -559,6 +560,8 @@ func cardFrom(s machineStatus) cardMachine {
 		if idle.Process != "" {
 			m.Detail += " · " + idle.Process
 		}
+	case idle.Locked:
+		m.Tone, m.Label, m.Detail = "good", "Libre", "Pantalla bloqueada"
 	default:
 		m.Tone, m.Label = "good", "Libre"
 		m.Detail = "Sin actividad desde " + cardAgo(time.Duration(idle.IdleSec)*time.Second)

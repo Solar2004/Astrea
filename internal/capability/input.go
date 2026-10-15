@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
 )
 
@@ -55,6 +56,8 @@ func (MouseMove) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, &protocol.Error{Code: protocol.CodeBadRequest, Message: err.Error()}
 	}
+	power.MarkInjected() // our input is not a person at the PC
+	defer power.MarkInjected()
 	if err := input.MouseMove(req.X, req.Y); err != nil {
 		return nil, internal(err)
 	}
@@ -98,6 +101,8 @@ func (MouseClick) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (an
 	if req.Button == "" {
 		req.Button = "left"
 	}
+	power.MarkInjected() // our input is not a person at the PC
+	defer power.MarkInjected()
 	if err := input.MouseClick(req.Button, req.Double); err != nil {
 		return nil, internal(err)
 	}
@@ -133,6 +138,8 @@ func (KeyType) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, 
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, &protocol.Error{Code: protocol.CodeBadRequest, Message: err.Error()}
 	}
+	power.MarkInjected() // our input is not a person at the PC
+	defer power.MarkInjected()
 	if err := input.KeyType(req.Text); err != nil {
 		return nil, internal(err)
 	}

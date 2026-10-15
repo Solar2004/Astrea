@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
 )
 
@@ -117,6 +118,8 @@ func (MouseButton) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (a
 	if req.Button == "" {
 		req.Button = "left"
 	}
+	power.MarkInjected() // our input is not a person at the PC
+	defer power.MarkInjected()
 	if err := input.MouseButton(req.Button, req.Action == "down"); err != nil {
 		return nil, internal(err)
 	}
@@ -147,6 +150,8 @@ func (MouseScroll) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (a
 		return nil, err
 	}
 	req.DX, req.DY = min(max(req.DX, -50), 50), min(max(req.DY, -50), 50)
+	power.MarkInjected() // our input is not a person at the PC
+	defer power.MarkInjected()
 	if err := input.Scroll(req.DX, req.DY); err != nil {
 		return nil, internal(err)
 	}
@@ -221,6 +226,8 @@ func (KeyPress) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any,
 	if err != nil {
 		return nil, badRequest(err)
 	}
+	power.MarkInjected() // our input is not a person at the PC
+	defer power.MarkInjected()
 	if err := input.KeyPress(keys); err != nil {
 		return nil, internal(err)
 	}
