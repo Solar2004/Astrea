@@ -112,7 +112,12 @@ func main() {
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	static, _ := fs.Sub(webFS, "web")
 	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.FS(static)))
+	files := http.FileServer(http.FS(static))
+	// no-cache: tras actualizar el panel, el navegador revalida y no sirve una web vieja.
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		files.ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("/api/stats", p.handleStats)
 	mux.HandleFunc("/api/screenshot", p.handleScreenshot)
 	mux.HandleFunc("/api/version", p.handleVersion)

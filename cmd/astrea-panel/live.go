@@ -42,9 +42,9 @@ type liveFrame struct {
 	} `json:"images"`
 }
 
-func (p *panel) frame(ctx context.Context, machine string, width, quality int) ([]byte, error) {
+func (p *panel) frame(ctx context.Context, machine string, width, quality int, timeout time.Duration) ([]byte, error) {
 	var f liveFrame
-	if _, err := p.call(ctx, machine, "screen.capture", map[string]any{"max_width": width, "quality": quality, "format": "jpeg"}, &f, 15*time.Second); err != nil {
+	if _, err := p.call(ctx, machine, "screen.capture", map[string]any{"max_width": width, "quality": quality, "format": "jpeg"}, &f, timeout); err != nil {
 		return nil, err
 	}
 	if len(f.Images) == 0 {
@@ -71,7 +71,12 @@ func (p *panel) handleLive(w http.ResponseWriter, r *http.Request) {
 	fps := queryInt(r, "fps", 8, 1, 15)
 	width := queryInt(r, "w", 1280, 320, 2560)
 	quality := queryInt(r, "q", 60, 20, 90)
-	first, err := p.frame(r.Context(), machine, width, quality)
+	// Una PC que no ha respondido en el último minuto falla rápido (3 s), no a los 15.
+	timeout := 15 * time.Second
+	if p.workTimeout(machine) < 8*time.Second {
+		timeout = 3 * time.Second
+	}
+	first, err := p.frame(r.Context(), machine, width, quality, timeout)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -100,7 +105,7 @@ func (p *panel) handleLive(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		next, err := p.frame(r.Context(), machine, width, quality)
+		next, err := p.frame(r.Context(), machine, width, quality, 15*time.Second)
 		if r.Context().Err() != nil {
 			return
 		}
