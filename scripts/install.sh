@@ -16,6 +16,13 @@
 set -euo pipefail
 
 REPO="${ASTREA_REPO:-Solar2004/Astrea}"
+# Cómo volver a invocar este script en los mensajes: con `curl | bash`, $0 es
+# "bash", así que se muestra la línea completa.
+if [ -f "$0" ] && [ "$(basename "$0")" = "install.sh" ]; then
+  SELF="$0"
+else
+  SELF="curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh | bash -s --"
+fi
 PORT="${ASTREA_PORT:-7700}"
 ROLE="${1:-hub}"
 BINDIR="${HOME}/.local/bin"
@@ -177,12 +184,11 @@ hub)
 Hub y panel instalados en ${BINDIR}.
 
 1) Instala el agente en cada PC a controlar (Windows o Linux). Cada instalador
-   te da un bloque con su IP de tailnet y su token. Regístralo aquí con:
+   te da una ficha (hub-config.txt) con su IP de tailnet y su token.
+   Lo más fácil: ábrela, cópiala entera y pégala en el panel
+   (http://127.0.0.1:7780 → Añadir un equipo). O por terminal:
 
-     $0 add-machine <nombre> <ip-tailnet> <token>
-
-   Ejemplo:
-     $0 add-machine pc-cuarto 100.65.90.69 e1bb0c37...225f
+     ${SELF} add-machine <nombre> <ip-tailnet> <token>
 
 2) Engancha el hub a Hermes (una vez). En ~/.hermes/config.yaml — o en el
    perfil que uses — bajo mcp_servers:
@@ -256,7 +262,7 @@ add-machine)
   NAME="${2:-}"
   MIP="${3:-}"
   MTOKEN="${4:-}"
-  [ -n "$NAME" ] && [ -n "$MIP" ] && [ -n "$MTOKEN" ] || die "uso: $0 add-machine <nombre> <ip-tailnet> <token>"
+  [ -n "$NAME" ] && [ -n "$MIP" ] && [ -n "$MTOKEN" ] || die "uso: ${SELF} add-machine <nombre> <ip-tailnet> <token>"
   # Un solo archivo sirve al hub y al panel: el hub lee machines.json y cae a
   # panel.json; aquí usamos machines.json.
   FILE="${CFGDIR}/machines.json"

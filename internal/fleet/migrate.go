@@ -37,16 +37,29 @@ Remove-Item "$exe.old" -Force -ErrorAction SilentlyContinue
 Move-Item $exe "$exe.old" -Force
 Move-Item $new $exe -Force
 $restart = @'
-Start-Sleep -Seconds 3
-foreach ($n in 'AstreaAgent', 'AstreaAgentGUI') {
-  if (Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue) {
-    Stop-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-    Start-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+$exe = '__EXE__'
+function Restart-Agent {
+  foreach ($n in 'AstreaAgent', 'AstreaAgentGUI') {
+    if (Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue) {
+      Stop-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 1
+      Start-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+    }
   }
+}
+Start-Sleep -Seconds 3
+Restart-Agent
+# Rollback: if Windows refuses the new binary (Smart App Control, WDAC,
+# antivirus) the agent would never come back; put the old one back instead.
+Start-Sleep -Seconds 20
+if ((Get-ScheduledTask -TaskName 'AstreaAgent').State -ne 'Running' -and (Test-Path "$exe.old")) {
+  Move-Item $exe "$exe.failed" -Force -ErrorAction SilentlyContinue
+  Move-Item "$exe.old" $exe -Force
+  Restart-Agent
 }
 Unregister-ScheduledTask -TaskName 'AstreaMigrate' -Confirm:$false -ErrorAction SilentlyContinue
 '@
+$restart = $restart.Replace('__EXE__', $exe.Replace("'", "''"))
 $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($restart))
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand $enc"
 Register-ScheduledTask -TaskName 'AstreaMigrate' -Action $action -Principal $t.Principal -Force | Out-Null
@@ -83,7 +96,7 @@ func (n *Node) Migrate(ctx context.Context, tag string) UpdateResult {
 		Version string `json:"version"`
 	}
 	if err := n.Call(ctx, "admin.status", &admin); err != nil {
-		r.Error = "sin conexión (¿apagada o fuera del tailnet?)"
+		r.Error = ErrOffline
 		return r
 	}
 	if admin.Version != "" {

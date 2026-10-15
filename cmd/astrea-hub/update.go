@@ -77,6 +77,9 @@ func runUpdate(args []string) {
 			}
 			for _, r := range res {
 				switch {
+				case r.Error == fleet.ErrOffline:
+					// Off is not a failure: the next run (or the agent itself) catches up.
+					say("  · %-18s %s", r.Name, r.Error)
 				case r.Error != "":
 					failed = true
 					say("  ✗ %-18s %s", r.Name, r.Error)

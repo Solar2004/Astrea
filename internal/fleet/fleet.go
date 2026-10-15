@@ -343,6 +343,9 @@ func (n *Node) CallWith(ctx context.Context, method string, args, out any) error
 	return json.Unmarshal(res.Result, out)
 }
 
+// ErrOffline is the UpdateResult.Error of a machine that did not answer.
+const ErrOffline = "sin conexión (¿apagada o fuera del tailnet?)"
+
 // TooOldForUpdate explains an agent without agent.update.
 const TooOldForUpdate = "agente v0.2.x sin auto-update: ejecuta una vez astrea-hub update --migrate (o reinstálalo) y a partir de ahí se actualiza solo"
 
@@ -370,7 +373,7 @@ func (n *Node) Update(ctx context.Context, checkOnly, force bool) UpdateResult {
 	err := n.Call(pctx, "admin.status", &probe)
 	pcancel()
 	if err != nil {
-		r.Error = "sin conexión (¿apagada o fuera del tailnet?)"
+		r.Error = ErrOffline
 		return r
 	}
 	r.Current = probe.Version
