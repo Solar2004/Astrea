@@ -75,12 +75,13 @@ Barra lateral                     Contenido
 ───────────────                   ─────────────────────────────────────────
 ✦ Astrea
 ▦ Resumen          ──────────▶    KPIs (en línea · libres · en uso · servicios)
+📋 Tareas      1                   Tareas de la IA (#/tareas) → detalle (#/tareas/EQUIPO/ID)
 EQUIPOS                           avisos (actualizar / reinstalar)
 ● pc-aula   Libre   3%            tarjetas de equipos → detalle
 ● pc-aula2  Sin conexión
 AYUDA                             Detalle de equipo  (#/m/NOMBRE)
 ⊕ Añadir un equipo                  [Frenar IA] [Ver pantalla] [Actualizar]
-───────────────                     Rendimiento | Servicios | Actividad | Sistema
+───────────────                     Rendimiento | Servicios | Tareas | Actividad | Sistema
 ● Actualizado 19:31
   Astrea v0.3.0                   Ayuda  (#/ayuda): 3 pasos + glosario de estados
 ```
@@ -99,6 +100,7 @@ en el móvil.
 | `idle.user_active` | **En uso** · “Alguien la está usando · proceso” |
 | `admin.mode == "readonly"` / otro | **Solo lectura** / **Control total** |
 | service `running/starting/backoff/stopped/failed` | Funcionando / Arrancando / Reintentando / Detenido / Falló |
+| tarea `running/done/failed/cancelled/replaced/abandoned` | En curso / Terminada / Falló / Cancelada / Cerrada al empezar otra / Abandonada (mismas palabras que Telegram) |
 | sin `admin.version` | **Actualización** (agente < v0.3; `POST /api/update` lo migra en remoto) |
 
 ## Endpoints que usa la UI
@@ -112,8 +114,12 @@ en el móvil.
 | `POST /api/machines`, `DELETE /api/machines?name=` | *Añadir un equipo* (paso 3: pegar ficha) y *Sistema › Quitar del panel* |
 | `GET /api/audit?machine=&limit=` | Pestaña *Actividad*; 501 → estado vacío “actualízalo” |
 | `POST /api/service?…&action=`, `GET /api/service/logs` | Pestaña *Servicios*: Iniciar / Reiniciar / Detener / Registro |
+| `admin.work` en `/api/stats` | Tira “📋 título · 3/5 · 12 min” en la tarjeta, aviso en el detalle del equipo, contador en la barra lateral |
+| `GET /api/work?limit=` | *Tareas*: KPIs, filtros (todas / en curso / con problemas, por equipo), historial por día; cada 8 s |
+| `GET /api/work?machine=` | Pestaña *Tareas* del equipo; títulos de los enlaces “tarea” en *Actividad* (`audit[].work`) |
+| `GET /api/work?machine=&id=` | Detalle: notas de la IA y acciones reales intercaladas por hora; cada 4 s si sigue en curso |
 
-Cada pestaña tiene URL propia: `#/m/NOMBRE/rendimiento|servicios|actividad|sistema`.
+Cada pestaña tiene URL propia: `#/m/NOMBRE/rendimiento|servicios|tareas|actividad|sistema`.
 La pestaña *Actividad* oculta por defecto las consultas que hace el propio panel
 (`sys.stats`, `admin.status`…), si no taparían lo que hace la IA.
 
