@@ -2,174 +2,457 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Astrea — Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Astrea</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Astrea">
+<meta name="theme-color" content="#F5F5F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E12" media="(prefers-color-scheme: dark)">
 <style>
+  /* Tokens — see docs/DESIGN.md. Status colors always ship with a text label. */
   :root {
     color-scheme: light;
-    --surface-0: #f3f3f1;
-    --surface-1: #fcfcfb;
-    --surface-2: #eceae6;
-    --border: #e2e1dc;
-    --track: #ebeae6;
-    --text-primary: #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted: #7a7974;
-    --series-1: #2a78d6;
-    --series-1-soft: rgba(42, 120, 214, 0.14);
-    --good: #0ca30c;
-    --warn: #c98a12;
-    --critical: #d03b3b;
-    --accent-soft: rgba(42, 120, 214, 0.10);
+    --bg: #F5F5F7;
+    --sidebar: rgba(240, 240, 244, .78);
+    --surface: #FFFFFF;
+    --surface-2: #F1F1F4;
+    --surface-3: #E7E7EC;
+    --border: rgba(0, 0, 0, .08);
+    --divider: rgba(0, 0, 0, .06);
+    --track: #ECECF0;
+    --text: #1D1D1F;
+    --text-2: #515154;
+    --text-3: #86868B;
+    --primary: #5B4BDB;
+    --primary-hover: #4C3CCB;
+    --primary-soft: rgba(91, 75, 219, .10);
+    --primary-area: rgba(91, 75, 219, .12);
+    --on-primary: #FFFFFF;
+    --good: #12A150;
+    --warn: #B7791F;
+    --bad: #E5484D;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 1px rgba(0, 0, 0, .02);
+    --shadow-md: 0 2px 6px rgba(0, 0, 0, .04), 0 10px 28px rgba(0, 0, 0, .07);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, .22);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --sidebar-w: 256px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --surface-0: #111110;
-      --surface-1: #1a1a19;
-      --surface-2: #232320;
-      --border: #2e2e2b;
-      --track: #2a2a27;
-      --text-primary: #ffffff;
-      --text-secondary: #c3c2b7;
-      --text-muted: #8f8e86;
-      --series-1: #3987e5;
-      --series-1-soft: rgba(57, 135, 229, 0.20);
-      --accent-soft: rgba(57, 135, 229, 0.14);
+      --bg: #0E0E12;
+      --sidebar: rgba(22, 22, 28, .72);
+      --surface: #18181D;
+      --surface-2: #222229;
+      --surface-3: #2C2C34;
+      --border: rgba(255, 255, 255, .08);
+      --divider: rgba(255, 255, 255, .06);
+      --track: #2A2A32;
+      --text: #F5F5F7;
+      --text-2: #B4B4BC;
+      --text-3: #7C7C86;
+      --primary: #8B7CFF;
+      --primary-hover: #9D90FF;
+      --primary-soft: rgba(139, 124, 255, .16);
+      --primary-area: rgba(139, 124, 255, .20);
+      --on-primary: #0E0E12;
+      --good: #45D483;
+      --warn: #F5A524;
+      --bad: #FF6369;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+      --shadow-md: 0 2px 6px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .35);
+      --shadow-lg: 0 24px 64px rgba(0, 0, 0, .6);
     }
   }
+
   * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
   body {
-    margin: 0; padding: 24px;
-    background: var(--surface-0); color: var(--text-primary);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  header.top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
-  header.top h1 { font-size: 18px; margin: 0; font-weight: 600; }
-  header.top .sub { color: var(--text-muted); font-size: 13px; }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+  .num, .tnum { font-variant-numeric: tabular-nums; }
+  .icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .muted { color: var(--text-3); }
+  .spacer { flex: 1; }
 
-  /* Fleet summary: one chip per machine, click scrolls to it. */
-  .fleet { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px; }
-  .chip { flex: 1 1 220px; max-width: 320px; text-align: left; cursor: pointer;
-          background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
-          padding: 12px 14px; color: inherit; font: inherit; transition: border-color .15s, background .15s; }
-  .chip:hover { border-color: var(--series-1); background: var(--accent-soft); }
-  .chip .nm { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 15px; margin-bottom: 8px; }
-  .chip .nm .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .dot.on { background: var(--good); } .dot.off { background: var(--critical); } .dot.busy { background: var(--warn); }
-  .chip .bars { display: grid; grid-template-columns: 28px 1fr; gap: 4px 8px; align-items: center; font-size: 12px; color: var(--text-muted); }
-  .chip .bars .v { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
-  .minibar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; grid-column: 2; }
-  .minibar > span { display: block; height: 100%; background: var(--series-1); }
-  .chip .foot { margin-top: 8px; font-size: 12px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  /* ---------- layout ---------- */
+  .app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+  .sidebar {
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 18px 12px 14px;
+    background: var(--sidebar); border-right: 1px solid var(--border);
+    -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; font-weight: 700; font-size: 17px; letter-spacing: -.01em; color: var(--text); }
+  .brand img { width: 28px; height: 28px; border-radius: 7px; }
+  .brand:hover { text-decoration: none; }
+  .nav-label { font-size: 11px; font-weight: 600; color: var(--text-3); letter-spacing: .02em; padding: 14px 10px 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; min-height: 36px;
+    padding: 6px 10px; border-radius: var(--radius-sm); color: var(--text); font-weight: 500;
+  }
+  .nav-item:hover { background: var(--surface-3); text-decoration: none; }
+  .nav-item[aria-current="page"] { background: var(--primary-soft); color: var(--primary); }
+  .nav-item .icon { color: var(--text-2); }
+  .nav-item[aria-current="page"] .icon { color: var(--primary); }
+  .nav-item .two { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+  .nav-item .two b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav-item .two small { font-size: 11.5px; color: var(--text-3); }
+  .nav-item .end { margin-left: auto; font-size: 12px; color: var(--text-3); }
+  .sidebar .foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--divider); font-size: 12px; color: var(--text-3); display: grid; gap: 4px; }
+  .sidebar .foot .row { display: flex; align-items: center; gap: 6px; }
 
-  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
-           padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary);
-           background: var(--surface-2); letter-spacing: .02em; }
-  .badge.free { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--border)); }
-  .badge.busy { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
-  .badge.locked { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, var(--border)); }
+  .main { min-width: 0; }
+  .topbar, .scrim { display: none; }
+  .view { max-width: 1240px; margin: 0 auto; padding: 32px 40px 64px; }
 
-  .machine { margin-bottom: 32px; scroll-margin-top: 16px; }
-  .mhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
-  .mhead h2 { margin: 0; font-size: 20px; font-weight: 600; }
-  .mhead .meta { color: var(--text-secondary); font-size: 13px; }
-  .mhead .spacer { flex: 1; }
-  .btn { cursor: pointer; font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 7px;
-         border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); transition: border-color .15s; }
-  .btn:hover { border-color: var(--series-1); }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
-  .status .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .error { color: var(--text-secondary); background: var(--surface-1); border: 1px solid var(--border);
-           border-left: 3px solid var(--critical); padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
-  .card.wide { grid-column: 1 / -1; }
-  .card h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
-  .card .model { color: var(--text-secondary); font-size: 13px; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hero { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
-  .hero .num { font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
-  .hero .detail { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
+  /* ---------- status dot + chips (HeroUI "flat" chip) ---------- */
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
+  .t-good { --tone: var(--good); } .t-warn { --tone: var(--warn); } .t-bad { --tone: var(--bad); }
+  .t-primary { --tone: var(--primary); } .t-neutral { --tone: var(--text-3); }
+  .dot[class*="t-"] { background: var(--tone); }
+  .dot.pulse { box-shadow: 0 0 0 0 var(--tone); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
+    border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+    color: color-mix(in srgb, var(--tone, var(--text-3)) 88%, var(--text));
+    background: color-mix(in srgb, var(--tone, var(--text-3)) 14%, transparent);
+  }
+  .chip .dot { width: 6px; height: 6px; background: var(--tone, var(--text-3)); }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    height: 36px; padding: 0 14px; border-radius: var(--radius-sm); border: 0; cursor: pointer;
+    background: var(--surface-2); color: var(--text); font-weight: 600; font-size: 13.5px;
+    transition: background .15s, transform .1s;
+  }
+  .btn:hover { background: var(--surface-3); text-decoration: none; }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .5; cursor: default; transform: none; }
+  .btn.primary { background: var(--primary); color: var(--on-primary); }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.danger { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+  .btn.ghost { background: transparent; }
+  .btn.ghost:hover { background: var(--surface-2); }
+  .btn.sm { height: 30px; padding: 0 11px; font-size: 12.5px; }
+  .btn.icon-only { width: 36px; padding: 0; }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- page header ---------- */
+  .crumbs { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-3); margin-bottom: 6px; }
+  .crumbs a { color: var(--text-3); }
+  .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-bottom: 24px; }
+  .page-head h1 { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 700; letter-spacing: -.022em; }
+  .page-head .sub { color: var(--text-2); margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .page-head .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  h2.section { font-size: 17px; font-weight: 650; letter-spacing: -.01em; margin: 32px 0 12px; display: flex; align-items: center; gap: 8px; }
+  h2.section .count { font-size: 13px; color: var(--text-3); font-weight: 500; }
+
+  /* ---------- cards ---------- */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-sm); min-width: 0; }
+  .card h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+  .card .model { color: var(--text-3); font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .wide { grid-column: 1 / -1; }
+
+  /* KPI tiles */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  .kpi .label { font-size: 13px; color: var(--text-2); font-weight: 500; display: flex; align-items: center; gap: 7px; }
+  .kpi .value { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .kpi .value small { font-size: 18px; color: var(--text-3); font-weight: 600; }
+  .kpi .hint { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+  /* machine cards on the overview */
+  a.mcard { display: flex; flex-direction: column; gap: 14px; color: inherit; transition: transform .15s, box-shadow .15s, border-color .15s; }
+  a.mcard:hover { text-decoration: none; transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+  a.mcard.off { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
+  .mcard .top { display: flex; align-items: center; gap: 12px; }
+  .os-tile { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex: none; background: var(--primary-soft); color: var(--primary); }
+  .os-tile .icon { width: 22px; height: 22px; }
+  .mcard.off .os-tile { background: var(--surface-2); color: var(--text-3); }
+  .mcard .who { min-width: 0; }
+  .mcard .who b { display: block; font-size: 16px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mcard .who small { color: var(--text-3); font-size: 12.5px; }
+  .mcard .chev { margin-left: auto; color: var(--text-3); }
+  .bars { display: grid; grid-template-columns: 38px 1fr 40px; gap: 7px 10px; align-items: center; font-size: 12.5px; }
+  .bars .k { color: var(--text-3); font-weight: 500; }
+  .bars .v { text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .mcard .bottom { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--divider); font-size: 12.5px; color: var(--text-2); }
+  .mcard .off-msg { color: var(--text-3); font-size: 13px; }
+  .mcard .bottom { margin-top: auto; }
+  .glossary .li .chip { min-width: 112px; justify-content: flex-start; }
+  .glossary .li .v { margin-left: 4px !important; }
+
+  /* meters (4px rounded data-ends, anchored to the baseline) */
   .meter { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
-  .meter > span { display: block; height: 100%; background: var(--series-1); border-radius: 4px; transition: width .4s ease; }
-  .meter.hot > span { background: var(--critical); }
-  .spark { position: relative; margin-top: 12px; }
-  .spark svg { display: block; width: 100%; height: 56px; overflow: visible; }
-  .spark .tip { position: absolute; top: -6px; transform: translate(-50%, -100%); pointer-events: none;
-                background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
-                padding: 3px 7px; font-size: 12px; white-space: nowrap; color: var(--text-primary);
-                box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; font-variant-numeric: tabular-nums; }
-  .spark .axis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
-  .facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin-top: 12px; font-size: 13px; }
-  .facts dt { color: var(--text-muted); }
-  .facts dd { margin: 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-  .cores-label { color: var(--text-muted); font-size: 11px; margin: 12px 0 4px; }
-  .cores { display: flex; gap: 2px; height: 36px; }
-  .cores span { flex: 1; min-width: 0; display: flex; align-items: flex-end; background: var(--track); border-radius: 2px; overflow: hidden; }
-  .cores span i { display: block; width: 100%; background: var(--series-1); min-height: 1px; }
-  .disk { margin-top: 10px; }
-  .disk:first-of-type { margin-top: 4px; }
-  .disk .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
-  .disk .row .v { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-  .svc { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
-  .svc:first-of-type { border-top: 0; }
-  .svc .nm { font-weight: 600; }
-  .svc .st { font-size: 11px; }
-  .svc a { color: var(--series-1); text-decoration: none; font-variant-numeric: tabular-nums; }
-  .svc a:hover { text-decoration: underline; }
-  .svc .spacer { flex: 1; }
-  .na { color: var(--text-muted); }
-  .empty { color: var(--text-muted); font-size: 13px; }
+  .meter.thin { height: 6px; }
+  .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--primary); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+  .meter.hot > span { background: var(--bad); }
 
-  .shot { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: none; align-items: center; justify-content: center; z-index: 20; }
-  .shot.open { display: flex; }
-  .shot .box { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px; max-width: 94vw; max-height: 94vh; display: flex; flex-direction: column; gap: 8px; }
-  .shot .bar { display: flex; align-items: center; gap: 12px; }
-  .shot .bar h3 { margin: 0; font-size: 14px; }
-  .shot .bar .spacer { flex: 1; }
-  .shot img { max-width: 90vw; max-height: 82vh; border-radius: 6px; background: var(--track); }
-  .shot .msg { color: var(--text-secondary); padding: 40px; }
+  /* metric cards (machine view) */
+  .hero { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 10px; }
+  .hero .big { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .hero .detail { color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .spark { position: relative; margin-top: 14px; }
+  .spark svg { display: block; width: 100%; height: 64px; overflow: visible; }
+  .spark .tip { position: absolute; top: -6px; transform: translate(-50%, -100%); pointer-events: none;
+                background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+                padding: 4px 8px; font-size: 12px; white-space: nowrap; box-shadow: var(--shadow-md);
+                display: none; font-variant-numeric: tabular-nums; }
+  .spark .axis { display: flex; justify-content: space-between; color: var(--text-3); font-size: 11px; margin-top: 4px; }
+  .cores-label { color: var(--text-3); font-size: 11.5px; margin: 14px 0 6px; }
+  .cores { display: flex; gap: 2px; height: 36px; }
+  .cores span { flex: 1; min-width: 0; display: flex; align-items: flex-end; background: var(--track); border-radius: 3px; overflow: hidden; }
+  .cores span i { display: block; width: 100%; background: var(--primary); min-height: 1px; border-radius: 3px 3px 0 0; }
+  .disk + .disk { margin-top: 14px; }
+  .disk .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 6px; }
+  .disk .row .v { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* segmented control (Apple) */
+  .segmented { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; margin-bottom: 18px; }
+  .segmented button { border: 0; background: transparent; padding: 6px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; color: var(--text-2); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .segmented button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm), 0 0 0 1px var(--border); }
+  .segmented .n { font-size: 11px; color: var(--text-3); font-weight: 600; }
+
+  /* inset grouped list (iOS Settings) */
+  .list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+  .list .li { display: flex; align-items: center; gap: 12px; padding: 13px 16px; min-height: 52px; position: relative; }
+  .list .li + .li::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: 1px solid var(--divider); }
+  .list .li .k { color: var(--text); font-weight: 500; }
+  .list .li .k small { display: block; color: var(--text-3); font-weight: 400; font-size: 12px; margin-top: 1px; }
+  .list .li .v { margin-left: auto; color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
+  .list-title { font-size: 12px; font-weight: 600; color: var(--text-3); letter-spacing: .02em; margin: 24px 4px 8px; text-transform: uppercase; }
+  [role="tabpanel"] > .list-title:first-child { margin-top: 4px; }
+  .list-foot { font-size: 12px; color: var(--text-3); margin: 8px 4px 0; }
+
+  /* callouts / banners */
+  .callout { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: var(--radius);
+             background: color-mix(in srgb, var(--tone, var(--primary)) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--tone, var(--primary)) 25%, var(--border)); margin-bottom: 18px; }
+  .callout > .icon { color: var(--tone, var(--primary)); width: 22px; height: 22px; margin-top: 1px; }
+  .callout b { display: block; margin-bottom: 2px; }
+  .callout p { margin: 0; color: var(--text-2); }
+  .callout ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); }
+  .callout .actions { margin-left: auto; display: flex; gap: 8px; align-self: center; flex-wrap: wrap; }
+
+  /* empty states */
+  .empty { text-align: center; padding: 56px 24px; color: var(--text-2); }
+  .empty img { width: 72px; height: 72px; border-radius: 18px; box-shadow: var(--shadow-md); }
+  .empty h2 { color: var(--text); font-size: 22px; letter-spacing: -.015em; margin: 18px 0 6px; }
+  .empty p { margin: 0 auto 18px; max-width: 440px; }
+  .empty-sm { color: var(--text-3); font-size: 13px; padding: 8px 0; }
+
+  /* services */
+  .svc .li .nm { font-weight: 600; }
+  .svc .li .meta { color: var(--text-3); font-size: 12px; }
+
+  /* help */
+  .steps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .step .n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; margin-bottom: 12px; }
+  .step h3 { font-size: 15px; color: var(--text); margin-bottom: 6px; }
+  .step p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+  code, pre { font-family: "SF Mono", "Geist Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+  pre { background: var(--surface-2); padding: 12px 14px; border-radius: var(--radius-sm); overflow-x: auto; margin: 10px 0 0; white-space: pre; }
+  :not(pre) > code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; }
+
+  /* screen viewer (sheet) */
+  .sheet-bg { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center;
+              background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
+  .sheet-bg.open { display: flex; animation: fade .18s ease-out; }
+  .sheet { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow-lg); border: 1px solid var(--border);
+           max-width: min(1320px, 96vw); max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; animation: rise .22s cubic-bezier(.2, .8, .2, 1); }
+  .sheet .bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--divider); }
+  .sheet .bar h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .sheet .bar small { color: var(--text-3); font-size: 12px; }
+  .sheet .body { padding: 14px; display: grid; place-items: center; min-width: min(640px, 90vw); min-height: 300px; background: var(--bg); }
+  .sheet img { max-width: 100%; max-height: 78vh; border-radius: 10px; display: block; box-shadow: var(--shadow-md); }
+  .sheet .msg { color: var(--text-2); padding: 40px; text-align: center; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
+  .toggle input { appearance: none; width: 36px; height: 22px; border-radius: 999px; background: var(--surface-3); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+  .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+  .toggle input:checked { background: var(--good); }
+  .toggle input:checked::after { transform: translateX(14px); }
+
+  /* toasts */
+  .toasts { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 40; }
+  .toast { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+           padding: 12px 16px; box-shadow: var(--shadow-md); max-width: 380px; animation: rise .22s cubic-bezier(.2, .8, .2, 1); }
+  .toast .icon { color: var(--tone); }
+
+  /* activity timeline */
+  .timeline .li { align-items: flex-start; }
+  .timeline .when { width: 64px; flex: none; color: var(--text-3); font-size: 12px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .timeline .what { min-width: 0; flex: 1; }
+  .timeline .what b { font-weight: 600; }
+  .timeline .what code { display: block; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); background: none; padding: 0; }
+  .timeline .what .err { color: var(--bad); font-size: 12.5px; margin-top: 3px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+
+  /* forms */
+  .field { display: grid; gap: 6px; margin-top: 12px; }
+  .field label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .input { width: 100%; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid transparent; border-radius: var(--radius-sm); padding: 9px 12px; transition: border-color .15s, background .15s; }
+  .input:focus { outline: none; border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px var(--primary-soft); }
+  textarea.input { min-height: 110px; resize: vertical; font-family: "SF Mono", "Geist Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .callout.sm { padding: 12px 14px; margin: 12px 0 0; }
+  .btn.danger:hover { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+  .svc .li .acts { display: flex; gap: 6px; align-items: center; }
+  .logs { margin: 0; max-height: 70vh; min-width: min(900px, 90vw); overflow: auto; white-space: pre-wrap; word-break: break-all; background: var(--bg); border-radius: 0; padding: 14px 18px; }
+
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* ---------- mobile: sidebar becomes a drawer ---------- */
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 25; transform: translateX(-100%); transition: transform .25s cubic-bezier(.2, .8, .2, 1); background: var(--surface); }
+    .app.nav-open .sidebar { transform: none; box-shadow: var(--shadow-lg); }
+    .scrim { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 24; }
+    .app.nav-open .scrim { display: block; }
+    .topbar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; padding: 10px 14px;
+              background: var(--sidebar); border-bottom: 1px solid var(--border);
+              -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); }
+    .topbar .brand { padding: 0; font-size: 16px; }
+    .view { padding: 20px 16px 48px; }
+    .page-head h1 { font-size: 26px; }
+    .page-head .actions { margin-left: 0; width: 100%; }
+    .grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<header class="top">
-  <h1>Astrea</h1>
-  <span class="sub" id="updated">conectando…</span>
-</header>
-<nav class="fleet" id="fleet"></nav>
-<main id="root"></main>
+<!-- Icon set: 24px, 1.8 stroke, rounded — SF Symbols-like. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-desktop" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M9 20h6M12 16v4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16V8M8.5 11.5 12 8l3.5 3.5"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+  <symbol id="i-mem" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 7v10M11 7v10M15 7v10M5 20v-3M19 20v-3"/></symbol>
+  <symbol id="i-gpu" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="11" rx="2"/><circle cx="9" cy="11.5" r="3"/><path d="M15 9.5h3.5M15 13.5h3.5M5 17v2.5"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/></symbol>
+</svg>
 
-<div class="shot" id="shot">
-  <div class="box">
-    <div class="bar">
-      <h3 id="shotTitle">Pantalla</h3>
-      <span class="spacer"></span>
-      <button class="btn" id="shotReload">Actualizar</button>
-      <button class="btn" id="shotClose">Cerrar ✕</button>
-    </div>
-    <div id="shotBody"></div>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar" aria-label="Navegación">
+    <a class="brand" href="#/"><img src="favicon.svg" alt="">Astrea</a>
+    <a class="nav-item" href="#/" data-route="overview"><svg class="icon"><use href="#i-grid"/></svg>Resumen</a>
+    <div class="nav-label">Equipos</div>
+    <nav id="navMachines"></nav>
+    <div class="nav-label">Ayuda</div>
+    <a class="nav-item" href="#/ayuda" data-route="help"><svg class="icon"><use href="#i-plus"/></svg>Añadir un equipo</a>
+    <div class="foot" id="sideFoot"></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="main">
+    <header class="topbar">
+      <button class="btn ghost icon-only" id="menuBtn" aria-label="Abrir menú"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <a class="brand" href="#/"><img src="favicon.svg" alt="">Astrea</a>
+    </header>
+    <main class="view" id="view" aria-live="polite"></main>
   </div>
 </div>
+
+<div class="sheet-bg" id="shot" role="dialog" aria-modal="true" aria-labelledby="shotTitle">
+  <div class="sheet">
+    <div class="bar">
+      <div><h3 id="shotTitle">Pantalla</h3><small id="shotWhen"></small></div>
+      <span class="spacer"></span>
+      <label class="toggle"><input type="checkbox" id="shotAuto">En vivo</label>
+      <button class="btn sm" id="shotReload"><svg class="icon"><use href="#i-refresh"/></svg>Actualizar</button>
+      <button class="btn sm ghost icon-only" id="shotClose" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="body" id="shotBody"></div>
+  </div>
+</div>
+<div class="sheet-bg" id="logs" role="dialog" aria-modal="true" aria-labelledby="logsTitle">
+  <div class="sheet">
+    <div class="bar">
+      <div><h3 id="logsTitle">Registro</h3><small id="logsWhen"></small></div>
+      <span class="spacer"></span>
+      <button class="btn sm" id="logsReload"><svg class="icon"><use href="#i-refresh"/></svg>Actualizar</button>
+      <button class="btn sm ghost icon-only" id="logsClose" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <pre class="logs" id="logsBody"></pre>
+  </div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script>
 "use strict";
 const POLL_MS = 2000;
 const HISTORY = 60; // samples kept per series (~2 min)
 const history = new Map(); // key -> [{t, v}]
+const lastGood = new Map(); // key -> last stats seen online
+const lastSeen = new Map(); // key -> ms timestamp of last online poll
 
+const S = {
+  list: null,       // last /api/stats payload (null = not loaded yet)
+  ok: true,         // panel backend reachable
+  err: "",
+  updatedAt: 0,
+  version: null,    // /api/version payload, null if the endpoint doesn't exist
+  pending: null,    // id of an action waiting for its inline confirmation
+  busy: new Set(),  // ids of actions in flight
+  audit: {},        // machine key -> {t, items, err, status, loading}
+  showAuto: false,  // activity: also show the panel's own automatic queries
+  add: { text: "", name: "" }, // "add machine" form
+};
+
+/* ---------- tiny DOM helpers ---------- */
 const $ = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
     if (k === "class") el.className = v;
     else if (k === "style") el.style.cssText = v;
     else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v);
+    else el.setAttribute(k, v === true ? "" : v);
   }
-  for (const k of kids) if (k != null) el.append(k);
+  for (const k of kids.flat()) if (k != null && k !== false) el.append(k);
   return el;
 };
+const SVG = "http://www.w3.org/2000/svg";
+function icon(name, cls = "") {
+  const s = document.createElementNS(SVG, "svg");
+  s.setAttribute("class", "icon " + cls);
+  s.setAttribute("aria-hidden", "true");
+  const u = document.createElementNS(SVG, "use");
+  u.setAttribute("href", "#i-" + name);
+  s.append(u);
+  return s;
+}
+const chip = (tone, label, withDot = true) => $("span", { class: "chip t-" + tone }, withDot ? $("span", { class: "dot" }) : null, label);
 
+/* ---------- formatting ---------- */
 function bytes(n) {
   if (n == null) return "—";
   const u = ["B", "KB", "MB", "GB", "TB"];
@@ -178,61 +461,122 @@ function bytes(n) {
   return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
 }
 const pct = v => v == null ? "—" : Math.round(v) + "%";
+const clamp = v => Math.max(0, Math.min(100, v ?? 0));
 function uptime(s) {
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
   return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
 }
-function since(s) {
-  if (s == null) return "—";
-  if (s < 60) return "hace " + Math.round(s) + " s";
-  if (s < 3600) return "hace " + Math.round(s / 60) + " min";
-  return "hace " + Math.round(s / 3600) + " h";
+function ago(sec) {
+  if (sec == null) return "—";
+  if (sec < 60) return "hace " + Math.max(1, Math.round(sec)) + " s";
+  if (sec < 3600) return "hace " + Math.round(sec / 60) + " min";
+  if (sec < 86400) return "hace " + Math.round(sec / 3600) + " h";
+  return "hace " + Math.round(sec / 86400) + " d";
 }
 const hhmmss = t => new Date(t).toLocaleTimeString();
-const slug = s => "m-" + String(s).replace(/[^a-zA-Z0-9]+/g, "-");
+const keyOf = (m, idx) => m.name || "m" + idx;
+const titleOf = (m, idx, s) => m.name || s?.host?.hostname || "Equipo " + (idx + 1);
+const osName = s => [s?.host?.platform, s?.host?.platform_version].filter(Boolean).join(" ");
 
+/* ---------- history (sparklines) ---------- */
 const series = key => history.get(key) || [];
 function record(key, v, t) {
   if (v == null) return;
   const h = history.get(key) || [];
-  h.push({ t, v: Math.max(0, Math.min(100, v)) });
+  h.push({ t, v: clamp(v) });
   if (h.length > HISTORY) h.shift();
   history.set(key, h);
 }
 function recordAll(list, t) {
   list.forEach((m, idx) => {
+    const key = keyOf(m, idx);
+    if (m.online) lastSeen.set(key, t);
     if (!m.online || !m.stats) return;
-    const key = m.name || "m" + idx, s = m.stats;
+    lastGood.set(key, m.stats);
+    const s = m.stats;
     record(key + ":cpu", s.cpu?.usage_percent, t);
     record(key + ":mem", s.memory?.used_percent, t);
     (s.gpus || []).forEach((g, i) => record(`${key}:gpu${i}`, g.usage_percent, t));
   });
 }
 
-function meter(v, hot) {
-  return $("div", { class: "meter" + (hot ? " hot" : ""), role: "meter", "aria-valuenow": String(Math.round(v ?? 0)) },
-    $("span", { style: `width:${Math.max(0, Math.min(100, v ?? 0))}%` }));
+/* ---------- domain: one plain-language verdict per machine ---------- */
+// presence() answers "can I use this PC right now?" — the question users actually have.
+function presence(m, key) {
+  if (!m.online) {
+    const t = m.last_seen || lastSeen.get(key);
+    return { tone: "bad", label: "Sin conexión", detail: t ? "Vista por última vez " + ago((Date.now() - t) / 1000) : "No responde" };
+  }
+  if (m.admin?.locked) return { tone: "bad", label: "Bloqueada", detail: "El freno de emergencia está activado" };
+  const idle = m.idle;
+  if (!idle) return { tone: "good", label: "En línea", detail: "" };
+  if (idle.session === "none") return { tone: "good", label: "Libre", detail: "Nadie ha iniciado sesión" };
+  if (idle.user_active) return { tone: "warn", label: "En uso", detail: "Alguien la está usando" + (idle.process ? " · " + idle.process : "") };
+  return { tone: "good", label: "Libre", detail: "Sin actividad " + ago(idle.idle_sec).replace("hace ", "desde hace ") };
+}
+function gpuPeak(s) {
+  let u = null, v = null;
+  for (const g of (s?.gpus || [])) {
+    if (g.usage_percent != null) u = Math.max(u ?? 0, g.usage_percent);
+    if (g.vram_used != null && g.vram_total) v = Math.max(v ?? 0, g.vram_used / g.vram_total * 100);
+  }
+  return { u, v };
+}
+const services = m => (m.services && m.services.services) || [];
+// Agent version lives in admin (admin.status). Agents < v0.3.0 don't report it; POST /api/update
+// migrates them remotely, so for the user they're just "outdated".
+const needsUpdate = m => !!m.admin?.update_available || needsReinstall(m);
+const needsReinstall = m => m.online && m.admin && !m.admin.version;
+const SVC = {
+  running: ["good", "Funcionando"], starting: ["warn", "Arrancando"], backoff: ["warn", "Reintentando"],
+  stopped: ["neutral", "Detenido"], exited: ["neutral", "Detenido"], failed: ["bad", "Falló"],
+};
+const svcState = st => SVC[st] || ["neutral", st || "Desconocido"];
+function explain(err) {
+  if (/unknown_method/.test(err)) return { title: "El agente de este equipo está desactualizado", body: "Reinstálalo o actualízalo para ver todos los datos." };
+  if (/unauthorized|401/.test(err)) return { title: "La clave de acceso no coincide", body: "El token de este equipo en machines.json no es el que tiene el agente." };
+  return { title: "No se puede contactar con este equipo", body: "Comprueba:", tips: ["Que esté encendido y con internet.", "Que Tailscale esté conectado en ambos equipos.", "Que el agente de Astrea esté en marcha."], raw: err };
+}
+
+/* ---------- routing ---------- */
+function route() {
+  const h = decodeURIComponent(location.hash.replace(/^#/, ""));
+  if (h.startsWith("/m/")) {
+    const [id, tab] = h.slice(3).split("/");
+    return { name: "machine", id, tab: TAB_IDS[tab] || "perf" };
+  }
+  if (h === "/ayuda") return { name: "help" };
+  return { name: "overview" };
+}
+const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
+const TAB_IDS = Object.fromEntries(TABS.map(t => [t[2], t[0]]));
+const machineHref = (key, tab) => "#/m/" + encodeURIComponent(key) + (tab && tab !== "perf" ? "/" + TABS.find(t => t[0] === tab)[2] : "");
+
+/* ---------- charts ---------- */
+function meter(v, { hot = false, thin = false, label = "" } = {}) {
+  return $("div", { class: "meter" + (hot ? " hot" : "") + (thin ? " thin" : ""), role: "meter", "aria-label": label,
+                    "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(v ?? 0)) },
+    $("span", { style: `width:${clamp(v)}%` }));
 }
 
 function sparkline(points, label) {
-  const W = 300, H = 56;
+  const W = 300, H = 64;
   const wrap = $("div", { class: "spark" });
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
+  const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", `${label}: historial de uso`);
+  svg.setAttribute("aria-label", `${label}: historial de uso de los últimos 2 minutos`);
   const x = i => (HISTORY <= 1 ? 0 : (i + HISTORY - points.length) * W / (HISTORY - 1));
   const y = v => H - 1 - v / 100 * (H - 2);
-  const mk = (tag, attrs) => { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
-  mk("line", { x1: 0, x2: W, y1: H - 0.5, y2: H - 0.5, stroke: "var(--border)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" });
+  const mk = (tag, attrs) => { const e = document.createElementNS(SVG, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
+  mk("line", { x1: 0, x2: W, y1: H - 0.5, y2: H - 0.5, stroke: "var(--divider)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" });
   if (points.length > 1) {
     const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
-    mk("polygon", { points: `${x(0)},${H} ${line} ${x(points.length - 1)},${H}`, fill: "var(--series-1-soft)" });
-    mk("polyline", { points: line, fill: "none", stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" });
+    mk("polygon", { points: `${x(0)},${H} ${line} ${x(points.length - 1)},${H}`, fill: "var(--primary-area)" });
+    mk("polyline", { points: line, fill: "none", stroke: "var(--primary)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" });
   }
-  const cross = mk("line", { y1: 0, y2: H, stroke: "var(--text-muted)", "stroke-width": 1, "vector-effect": "non-scaling-stroke", visibility: "hidden" });
+  const cross = mk("line", { y1: 0, y2: H, stroke: "var(--text-3)", "stroke-width": 1, "vector-effect": "non-scaling-stroke", visibility: "hidden" });
   const tip = $("div", { class: "tip" });
   svg.addEventListener("mousemove", ev => {
     if (!points.length) return;
@@ -247,214 +591,599 @@ function sparkline(points, label) {
     tip.style.display = "block";
   });
   svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
-  wrap.append(svg, tip, $("div", { class: "axis" }, $("span", {}, "hace ~2 min"), $("span", {}, "ahora")));
+  wrap.append(svg, tip, $("div", { class: "axis" }, $("span", {}, "hace 2 min"), $("span", {}, "ahora")));
   return wrap;
 }
 
-function facts(rows) {
-  const dl = $("dl", { class: "facts" });
-  for (const [k, v] of rows) if (v != null && v !== "") dl.append($("dt", {}, k), $("dd", {}, v));
-  return dl;
+/* ---------- actions (optional backend endpoints; hidden when absent) ---------- */
+function toast(msg, tone = "good") {
+  const t = $("div", { class: "toast t-" + tone, role: "status" }, icon(tone === "good" ? "check" : "alert"), $("span", {}, msg));
+  document.getElementById("toasts").append(t);
+  setTimeout(() => t.remove(), 6000);
 }
-
-// usage() interprets sys.idle into a {free, label} verdict.
-function usage(idle) {
-  if (!idle) return null;
-  if (idle.session === "none") return { state: "free", label: "sin sesión (libre para GPU)" };
-  if (idle.user_active) return { state: "busy", label: "en uso" + (idle.process ? " · " + idle.process : "") };
-  return { state: "free", label: "libre · inactiva " + since(idle.idle_sec) };
+// confirmable(): Apple-style inline confirmation instead of a browser dialog.
+function confirmable(id, { label, confirm, icon: ic, cls = "", run }) {
+  const sm = /\bsm\b/.test(cls) ? " sm" : "", danger = /\bdanger\b/.test(cls);
+  if (S.busy.has(id)) return $("button", { class: "btn" + sm, disabled: true }, icon("refresh", "spin"), "Trabajando…");
+  if (S.pending === id) return $("span", { style: "display:inline-flex;gap:8px" },
+    $("button", { class: "btn ghost" + sm, onclick: () => { S.pending = null; draw(); } }, "Cancelar"),
+    $("button", { class: "btn " + (danger ? "danger" : "primary") + sm, onclick: run }, confirm));
+  return $("button", { class: "btn " + cls, onclick: () => { S.pending = id; draw(); } }, ic ? icon(ic) : null, label);
 }
-
-function gpuPeak(s) {
-  let u = null, v = null;
-  for (const g of (s?.gpus || [])) {
-    if (g.usage_percent != null) u = Math.max(u ?? 0, g.usage_percent);
-    if (g.vram_used != null && g.vram_total) v = Math.max(v ?? 0, g.vram_used / g.vram_total * 100);
+async function updateAgent(target) {
+  const id = "update:" + target;
+  S.pending = null; S.busy.add(id); draw();
+  try {
+    const r = await fetch("/api/update?machine=" + encodeURIComponent(target), { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || "HTTP " + r.status);
+    if (target === "all") {
+      const res = j.results || [], bad = res.filter(x => x.error || x.ok === false);
+      const done = res.filter(x => x.updated || x.migrated).length;
+      toast(bad.length ? `${done} actualizados, ${bad.length} con error (${bad.map(x => x.machine).join(", ")})` : done ? `${done} ${done === 1 ? "equipo actualizado" : "equipos actualizados"}` : "Todos los equipos ya estaban al día", bad.length ? "bad" : "good");
+    } else if (j.migrated) toast(`${target} migrado a ${j.target || "la versión nueva"}. Vuelve en unos segundos.`);
+    else if (j.updated) toast(`${target}: ${j.current || "?"} → ${j.target}. Vuelve en unos segundos.`);
+    else toast(`${target} ya estaba al día${j.note ? " (" + j.note + ")" : ""}`);
+  } catch (e) {
+    if (target === "hub") return; // the panel restarts itself; handled below
+    toast("No se pudo actualizar: " + e.message, "bad");
+  } finally {
+    S.busy.delete(id); draw();
   }
-  return { u, v };
+}
+// The panel restarts itself after updating, so the response may never arrive.
+function updatePanel() {
+  S.pending = null; S.busy.add("update:hub"); draw();
+  toast("Actualizando el panel… se recargará solo.");
+  fetch("/api/update?machine=hub", { method: "POST" }).catch(() => {});
+  setTimeout(() => location.reload(), 6000);
+}
+async function loadVersion() {
+  try {
+    const r = await fetch("/api/version", { cache: "no-store" });
+    S.version = r.ok ? await r.json() : null;
+  } catch { S.version = null; }
 }
 
-/* ---------- fleet summary chips ---------- */
-function fleetBar(list) {
-  const bar = document.getElementById("fleet");
-  bar.replaceChildren(...list.map((m, idx) => {
-    const s = m.online ? m.stats : null;
-    const use = usage(m.idle);
-    const g = gpuPeak(s);
-    const dotCls = !m.online ? "off" : (use && use.state === "busy" ? "busy" : "on");
-    const rows = [];
-    const barRow = (lbl, val) => [$("span", {}, lbl), $("div", { class: "minibar" }, $("span", { style: `width:${Math.max(0, Math.min(100, val ?? 0))}%` })), $("span", { class: "v" }, pct(val))];
-    if (s) {
-      rows.push(...barRow("CPU", s.cpu?.usage_percent));
-      rows.push(...barRow("RAM", s.memory?.used_percent));
-      if (g.u != null || g.v != null) rows.push(...barRow("GPU", g.u != null ? g.u : g.v));
-    }
-    return $("button", { class: "chip", onclick: () => document.getElementById(slug(m.name || idx))?.scrollIntoView({ behavior: "smooth", block: "start" }) },
-      $("div", { class: "nm" }, $("span", { class: "dot " + dotCls }), m.name || ("Máquina " + (idx + 1))),
-      s ? $("div", { class: "bars" }, ...rows) : $("div", { class: "empty" }, m.online ? "sin stats" : "sin conexión"),
-      $("div", { class: "foot" },
-        use ? $("span", { class: "badge " + use.state }, use.state === "busy" ? "en uso" : "libre") : null,
-        (s && s.gpus?.length) ? $("span", { class: "badge" }, s.gpus.length + "× GPU") : null));
-  }));
+// api(): fetch JSON; throws Error(msg) with .status/.detail on failure.
+async function api(method, url, body) {
+  const r = await fetch(url, { method, body, cache: "no-store" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || (j && j.error)) {
+    const e = new Error((j && j.error) || "HTTP " + r.status);
+    e.status = r.status; e.detail = j && j.detail;
+    throw e;
+  }
+  return j;
+}
+const q = o => Object.entries(o).map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
+async function act(id, fn) {
+  S.pending = null; S.busy.add(id); draw();
+  try { await fn(); } catch (e) { toast(e.message, "bad"); }
+  finally { S.busy.delete(id); draw(); }
+}
+const machineOf = key => (S.list || []).find((m, i) => keyOf(m, i) === key);
+
+function setLock(key, locked) {
+  return act("lock:" + key, async () => {
+    const j = await api("POST", "/api/lock?" + q({ machine: key, locked }));
+    const m = machineOf(key);
+    if (m) m.admin = { ...(m.admin || {}), locked: j.locked };
+    toast(j.locked ? `Freno activado: ${key} rechazará cualquier orden de la IA.` : `Freno desactivado: la IA vuelve a poder usar ${key}.`, j.locked ? "bad" : "good");
+  });
+}
+function serviceAction(key, name, action) {
+  const verb = { start: "iniciado", stop: "detenido", restart: "reiniciado" }[action];
+  return act(`svc:${key}:${name}`, async () => {
+    await api("POST", "/api/service?" + q({ machine: key, name, action }));
+    toast(`${name} ${verb}`);
+  });
+}
+function removeMachine(key) {
+  return act("rm:" + key, async () => {
+    await api("DELETE", "/api/machines?" + q({ name: key }));
+    S.list = (S.list || []).filter((m, i) => keyOf(m, i) !== key);
+    toast(`${key} ya no aparece en el panel. El agente sigue instalado en ese equipo.`);
+    location.hash = "#/";
+  });
+}
+async function addMachine() {
+  const a = S.add;
+  if (!a.text.trim()) { a.err = "Pega primero la ficha del equipo."; a.detail = ""; draw(); return; }
+  a.busy = true; a.err = a.ok = null; draw();
+  try {
+    const j = await api("POST", "/api/machines" + (a.name.trim() ? "?" + q({ name: a.name.trim() }) : ""), a.text);
+    S.add = { text: "", name: "", ok: j };
+  } catch (e) {
+    a.err = e.message; a.detail = e.detail || "";
+  } finally {
+    S.add.busy = false; draw();
+  }
 }
 
-/* ---------- detail cards ---------- */
+// Activity: the panel itself polls these every 2 s; hide them unless asked.
+const AUTO = new Set(["sys.stats", "sys.idle", "sys.info", "admin.status", "admin.audit", "service.status", "capabilities", "ping"]);
+const VERBS = {
+  "exec": "Ejecutó un comando", "fs.list": "Miró una carpeta", "fs.read": "Leyó un archivo", "fs.write": "Escribió un archivo",
+  "proc.list": "Listó los procesos", "proc.kill": "Cerró un proceso", "screen.capture": "Capturó la pantalla",
+  "mouse.move": "Movió el ratón", "mouse.click": "Hizo clic", "key.type": "Escribió con el teclado",
+  "endpoint.create": "Creó una API", "endpoint.delete": "Borró una API", "endpoint.list": "Listó sus APIs",
+  "service.start": "Inició un servicio", "service.stop": "Detuvo un servicio", "service.restart": "Reinició un servicio",
+  "service.create": "Creó un servicio", "service.delete": "Borró un servicio", "service.logs": "Leyó el registro de un servicio",
+  "deps.check": "Comprobó dependencias", "deps.ensure": "Instaló dependencias", "net.download": "Descargó un archivo",
+  "job.start": "Lanzó una tarea", "job.cancel": "Canceló una tarea", "admin.lock": "Cambió el freno de emergencia",
+  "admin.update": "Se actualizó", "sys.stats": "Consultó el rendimiento", "sys.idle": "Comprobó si hay alguien",
+  "sys.info": "Consultó el sistema", "admin.status": "Consultó su estado", "service.status": "Consultó los servicios",
+};
+const verb = m => VERBS[m] || m;
+function loadAudit(key) {
+  const c = S.audit[key] || (S.audit[key] = {});
+  if (c.loading || (c.t && Date.now() - c.t < 5000)) return;
+  c.loading = true;
+  api("GET", "/api/audit?" + q({ machine: key, limit: 200 }))
+    .then(items => { c.items = Array.isArray(items) ? items : []; c.err = null; c.status = 200; })
+    .catch(e => { c.err = e.message; c.status = e.status; })
+    .finally(() => { c.loading = false; c.t = Date.now(); if (route().id === key && route().tab === "act") draw(); });
+}
+function when(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return ts || "";
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : d.toLocaleDateString([], { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/* ---------- service logs viewer ---------- */
+const logs = document.getElementById("logs");
+let logsTarget = null;
+function showLogs(key, name) {
+  logsTarget = { key, name };
+  document.getElementById("logsTitle").textContent = "Registro de " + name;
+  logs.classList.add("open");
+  document.getElementById("logsClose").focus();
+  loadLogs();
+}
+async function loadLogs() {
+  const body = document.getElementById("logsBody");
+  body.textContent = "Cargando…";
+  try {
+    const j = await api("GET", "/api/service/logs?" + q({ machine: logsTarget.key, name: logsTarget.name, lines: 300 }));
+    body.textContent = j.data || "(el registro está vacío)";
+    document.getElementById("logsWhen").textContent = logsTarget.key + " · " + hhmmss(Date.now());
+    body.scrollTop = body.scrollHeight;
+  } catch (e) { body.textContent = "No se pudo leer el registro: " + e.message; }
+}
+document.getElementById("logsClose").onclick = () => logs.classList.remove("open");
+document.getElementById("logsReload").onclick = loadLogs;
+logs.addEventListener("click", e => { if (e.target === logs) logs.classList.remove("open"); });
+
+/* ---------- sidebar ---------- */
+function drawSidebar() {
+  const r = route();
+  document.querySelectorAll("[data-route]").forEach(a => a.dataset.route === r.name ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+
+  const nav = document.getElementById("navMachines");
+  const list = S.list || [];
+  nav.replaceChildren(...(list.length ? list.map((m, idx) => {
+    const key = keyOf(m, idx), s = m.stats || lastGood.get(key), p = presence(m, key);
+    const cur = r.name === "machine" && r.id === key;
+    return $("a", { class: "nav-item", href: machineHref(key), "aria-current": cur ? "page" : null },
+      $("span", { class: "dot t-" + p.tone, "aria-hidden": "true" }),
+      $("span", { class: "two" }, $("b", {}, titleOf(m, idx, s)), $("small", {}, p.label)),
+      m.online && m.stats ? $("span", { class: "end tnum", title: "Uso de CPU" }, pct(m.stats.cpu?.usage_percent)) : null);
+  }) : [$("div", { class: "empty-sm", style: "padding:4px 10px" }, S.list ? "Ningún equipo todavía" : "Cargando…")]));
+
+  const v = S.version;
+  document.getElementById("sideFoot").replaceChildren(...[
+    $("div", { class: "row" }, $("span", { class: "dot t-" + (S.ok ? "good" : "bad") }),
+      S.ok ? (S.updatedAt ? "Actualizado " + hhmmss(S.updatedAt) : "Conectando…") : "El panel no responde"),
+    v?.panel ? $("div", { class: "row" }, "Astrea " + v.panel,
+      v.update_available ? $("a", { href: "#/", style: "margin-left:auto" }, v.latest + " disponible") : null) : null].filter(Boolean));
+}
+
+/* ---------- views ---------- */
+function updateBanner(list) {
+  const v = S.version;
+  const outdated = list.filter(needsUpdate).length;
+  const out = [];
+  if (v?.update_available || outdated) out.push($("div", { class: "callout t-primary" }, icon("up"),
+    $("div", {},
+      $("b", {}, v?.latest ? `Astrea ${v.latest} está disponible` : "Hay actualizaciones disponibles"),
+      $("p", {}, [v?.update_available ? `Este panel usa ${v.panel}.` : null,
+                  outdated ? `${outdated} ${outdated === 1 ? "equipo tiene" : "equipos tienen"} una versión anterior del agente.` : null,
+                  "Los equipos se desconectan unos segundos al actualizarse."].filter(Boolean).join(" "))),
+    $("div", { class: "actions" },
+      v?.update_available ? confirmable("update:hub", { label: "Actualizar panel", confirm: "Sí, actualizar panel", run: updatePanel }) : null,
+      outdated ? confirmable("update:all", { label: outdated === 1 ? "Actualizar equipo" : "Actualizar equipos", confirm: "Sí, actualizar", icon: "up", cls: "primary", run: () => updateAgent("all") }) : null)));
+  return out;
+}
+
+function kpiTile(label, value, of, hint, ic) {
+  return $("div", { class: "card kpi" },
+    $("div", { class: "label" }, icon(ic), label),
+    $("div", { class: "value" }, String(value), of != null ? $("small", {}, " / " + of) : null),
+    hint ? $("div", { class: "hint" }, hint) : null);
+}
+
+function machineCard(m, idx) {
+  const key = keyOf(m, idx), s = m.online ? m.stats : null, p = presence(m, key);
+  const title = titleOf(m, idx, s || lastGood.get(key));
+  const g = gpuPeak(s);
+  const row = (k, v) => [$("span", { class: "k" }, k), meter(v, { thin: true, label: k }), $("span", { class: "v" }, pct(v))];
+  const nSvc = services(m).filter(x => x.state === "running").length;
+  return $("a", { class: "card mcard" + (m.online ? "" : " off"), href: machineHref(key), "aria-label": `${title}: ${p.label}` },
+    $("div", { class: "top" },
+      $("div", { class: "os-tile" }, icon("desktop")),
+      $("div", { class: "who" }, $("b", {}, title), $("small", {}, osName(s || lastGood.get(key)) || (m.online ? "—" : "Sistema desconocido"))),
+      icon("chev", "chev")),
+    s ? $("div", { class: "bars" },
+          row("CPU", s.cpu?.usage_percent), row("RAM", s.memory?.used_percent),
+          (g.u != null || g.v != null) ? row(g.u != null ? "GPU" : "VRAM", g.u != null ? g.u : g.v) : null)
+      : $("div", { class: "off-msg" }, m.online ? "Esperando datos…" : p.detail),
+    $("div", { class: "bottom" },
+      chip(p.tone, p.label),
+      m.online && p.detail ? $("span", { class: "muted" }, p.detail) : null,
+      $("span", { class: "spacer" }),
+      nSvc ? $("span", { class: "muted" }, nSvc + (nSvc === 1 ? " servicio" : " servicios")) : null,
+      needsUpdate(m) ? chip("primary", "Actualización", false) : null));
+}
+
+function viewOverview(list) {
+  const online = list.filter(m => m.online);
+  const keys = list.map(keyOf);
+  const free = list.filter((m, i) => m.online && presence(m, keys[i]).label === "Libre").length;
+  const busy = list.filter((m, i) => m.online && presence(m, keys[i]).tone === "warn").length;
+  const svc = list.reduce((n, m) => n + services(m).filter(x => x.state === "running").length, 0);
+
+  const head = $("div", { class: "page-head" },
+    $("div", {}, $("h1", {}, "Resumen"),
+      $("div", { class: "sub" }, list.length ? `${online.length} de ${list.length} ${list.length === 1 ? "equipo en línea" : "equipos en línea"}` : "Tu flota de equipos")));
+
+  if (!list.length) return [head, $("div", { class: "card empty" },
+    $("img", { src: "apple-touch-icon.png", alt: "" }),
+    $("h2", {}, "Añade tu primer equipo"),
+    $("p", {}, "Astrea deja que tu IA use otros ordenadores: ver la pantalla, ejecutar programas y levantar modelos. Empieza instalando el agente en el equipo que quieras controlar."),
+    $("a", { class: "btn primary", href: "#/ayuda" }, icon("plus"), "Cómo añadir un equipo"))];
+
+  return [head,
+    updateBanner(list),
+    $("div", { class: "kpis" },
+      kpiTile("En línea", online.length, list.length, online.length === list.length ? "Todos responden" : `${list.length - online.length} sin conexión`, "check"),
+      kpiTile("Libres ahora", free, null, "Listos para que tu IA los use", "desktop"),
+      kpiTile("En uso", busy, null, busy ? "Alguien está delante" : "Nadie está delante", "user"),
+      kpiTile("Servicios activos", svc, null, svc ? "Modelos y APIs funcionando" : "Ninguno en marcha", "box")),
+    $("h2", { class: "section" }, "Equipos", $("span", { class: "count" }, String(list.length))),
+    $("div", { class: "grid" }, list.map(machineCard))];
+}
+
+/* machine detail */
 function cpuCard(key, s) {
   const c = s.cpu || {};
-  const cores = $("div", { class: "cores" });
+  const cores = $("div", { class: "cores", role: "img", "aria-label": "Uso por hilo" });
   for (const [i, v] of (c.per_core || []).entries())
-    cores.append($("span", { title: `Hilo ${i}: ${pct(v)}` }, $("i", { style: `height:${Math.min(100, v)}%` })));
+    cores.append($("span", { title: `Hilo ${i + 1}: ${pct(v)}` }, $("i", { style: `height:${clamp(v)}%` })));
   return $("section", { class: "card" },
-    $("h3", {}, "CPU"),
+    $("h3", {}, icon("cpu"), "Procesador"),
     $("div", { class: "model", title: c.model }, c.model || "—"),
-    $("div", { class: "hero" }, $("span", { class: "num" }, pct(c.usage_percent)),
+    $("div", { class: "hero" }, $("span", { class: "big" }, pct(c.usage_percent)),
       $("span", { class: "detail" }, `${c.cores ?? "?"} núcleos · ${c.threads ?? "?"} hilos`)),
-    meter(c.usage_percent),
+    meter(c.usage_percent, { label: "CPU" }),
     sparkline(series(key + ":cpu"), "CPU"),
-    $("div", { class: "cores-label" }, "Uso por hilo"),
-    cores);
+    (c.per_core || []).length ? [$("div", { class: "cores-label" }, "Uso por hilo"), cores] : null);
 }
-
 function memCard(key, s) {
   const m = s.memory || {};
   return $("section", { class: "card" },
-    $("h3", {}, "Memoria RAM"),
+    $("h3", {}, icon("mem"), "Memoria"),
     $("div", { class: "model" }, `${bytes(m.total)} instalados`),
-    $("div", { class: "hero" }, $("span", { class: "num" }, pct(m.used_percent)),
+    $("div", { class: "hero" }, $("span", { class: "big" }, pct(m.used_percent)),
       $("span", { class: "detail" }, `${bytes(m.used)} de ${bytes(m.total)}`)),
-    meter(m.used_percent),
+    meter(m.used_percent, { label: "RAM", hot: m.used_percent >= 92 }),
     sparkline(series(key + ":mem"), "RAM"),
-    facts([["Disponible", bytes(m.available)],
-           ["Swap / paginación", m.swap_total ? `${bytes(m.swap_used)} de ${bytes(m.swap_total)}` : null]]));
+    $("div", { class: "cores-label" }, `Disponible: ${bytes(m.available)}` + (m.swap_total ? ` · Paginación: ${bytes(m.swap_used)} de ${bytes(m.swap_total)}` : "")));
 }
-
 function gpuCard(key, g, i) {
   const vram = g.vram_used != null && g.vram_total ? g.vram_used / g.vram_total * 100 : null;
+  const known = g.usage_percent != null;
   return $("section", { class: "card" },
-    $("h3", {}, "Gráfica" + (g.vendor ? ` · ${g.vendor}` : "")),
+    $("h3", {}, icon("gpu"), "Gráfica" + (g.vendor ? ` · ${g.vendor}` : "")),
     $("div", { class: "model", title: g.name }, g.name || "—"),
     $("div", { class: "hero" },
-      $("span", { class: "num" }, g.usage_percent == null ? $("span", { class: "na" }, "—") : pct(g.usage_percent)),
-      $("span", { class: "detail" }, g.usage_percent == null ? "uso no disponible con este driver" : "uso")),
-    meter(g.usage_percent),
-    g.usage_percent == null ? null : sparkline(series(`${key}:gpu${i}`), g.name),
-    facts([[g.shared_memory ? "Memoria (compartida)" : "VRAM",
-            g.vram_used != null ? `${bytes(g.vram_used)} de ${bytes(g.vram_total)} (${pct(vram)})` : bytes(g.vram_total)],
-           ["Temperatura", g.temperature_c != null ? `${Math.round(g.temperature_c)} °C` : null]]));
+      $("span", { class: "big" }, pct(known ? g.usage_percent : vram)),
+      $("span", { class: "detail" }, known ? "de carga" : "de memoria usada")),
+    meter(known ? g.usage_percent : vram, { label: known ? "GPU" : "VRAM" }),
+    known ? sparkline(series(`${key}:gpu${i}`), g.name || "GPU") : null,
+    $("div", { class: "cores-label" },
+      [(g.shared_memory ? "Memoria compartida" : "VRAM") + ": " + (g.vram_used != null ? `${bytes(g.vram_used)} de ${bytes(g.vram_total)} (${pct(vram)})` : bytes(g.vram_total)),
+       g.temperature_c != null ? `${Math.round(g.temperature_c)} °C` : null].filter(Boolean).join(" · ")));
 }
-
 function diskCard(s) {
-  const card = $("section", { class: "card" }, $("h3", {}, "Discos"));
-  if (!(s.disks || []).length) card.append($("div", { class: "empty" }, "Sin datos de discos"));
-  for (const d of (s.disks || []))
-    card.append($("div", { class: "disk" },
-      $("div", { class: "row" }, $("span", {}, d.mount), $("span", { class: "v" }, `${bytes(d.used)} de ${bytes(d.total)} · ${pct(d.used_percent)}`)),
-      meter(d.used_percent, d.used_percent >= 90)));
-  return card;
+  const ds = s.disks || [];
+  return $("section", { class: "card" },
+    $("h3", {}, icon("disk"), "Almacenamiento"),
+    $("div", { class: "model" }, ds.length ? `${ds.length} ${ds.length === 1 ? "unidad" : "unidades"}` : "Sin datos"),
+    $("div", { style: "margin-top:16px" }, ds.map(d => $("div", { class: "disk" },
+      $("div", { class: "row" }, $("span", {}, d.mount), $("span", { class: "v" }, `${bytes(d.total - d.used)} libres de ${bytes(d.total)}`)),
+      meter(d.used_percent, { hot: d.used_percent >= 90, label: "Disco " + d.mount })))));
 }
 
-// servicesCard shows supervised services (local models, etc.) with their state
-// and exposed endpoint, if any.
-function servicesCard(base, services) {
-  const list = (services && services.services) || [];
-  if (!list.length) return null;
-  const card = $("section", { class: "card wide" }, $("h3", {}, "Servicios y modelos"));
-  const stColor = st => st === "running" ? "free" : (st === "backoff" || st === "starting" ? "busy" : "locked");
-  for (const sv of list) {
+function tabPerformance(key, s) {
+  if (!s) return $("div", { class: "card empty" }, $("p", {}, "Aún no hay datos de rendimiento de este equipo."));
+  const gpus = s.gpus || [];
+  return $("div", { class: "grid" },
+    cpuCard(key, s), memCard(key, s),
+    gpus.length ? gpus.map((g, i) => gpuCard(key, g, i))
+                : $("section", { class: "card" }, $("h3", {}, icon("gpu"), "Gráfica"), $("div", { class: "empty-sm" }, "No se detectó ninguna gráfica.")),
+    diskCard(s));
+}
+function tabServices(m) {
+  const list = services(m);
+  if (!list.length) return $("div", { class: "card empty" },
+    $("h2", {}, "Sin servicios"),
+    $("p", {}, "Aquí aparecerán los modelos y APIs que tu IA levante en este equipo (por ejemplo, un servidor de llama.cpp). Se reinician solos si fallan."));
+  const base = m.base || "";
+  return [$("div", { class: "list svc" }, list.map(sv => {
+    const [tone, label] = svcState(sv.state);
     const ep = sv.expose && sv.expose.endpoint;
-    card.append($("div", { class: "svc" },
-      $("span", { class: "nm" }, sv.name),
-      $("span", { class: "badge " + stColor(sv.state) }, sv.state || "?"),
+    return $("div", { class: "li" },
+      $("div", { class: "os-tile", style: "width:34px;height:34px;border-radius:9px" }, icon("box")),
+      $("div", {}, $("div", { class: "nm" }, sv.name),
+        $("div", { class: "meta" }, ep ? $("a", { href: base + "/dyn/" + ep, target: "_blank", rel: "noopener" }, "/dyn/" + ep) : "Sin dirección pública",
+          sv.restarts ? ` · ${sv.restarts} ${sv.restarts === 1 ? "reinicio" : "reinicios"}` : "")),
+      $("span", { class: "spacer" }), chip(tone, label),
+      m.online ? $("span", { class: "acts" },
+        $("button", { class: "btn sm ghost", onclick: () => showLogs(m.name, sv.name), title: "Ver registro" }, icon("doc"), "Registro"),
+        S.busy.has(`svc:${m.name}:${sv.name}`) ? $("button", { class: "btn sm", disabled: true }, icon("refresh", "spin"), "Trabajando…")
+          : ["running", "starting", "backoff"].includes(sv.state)
+            ? [$("button", { class: "btn sm", onclick: () => serviceAction(m.name, sv.name, "restart") }, "Reiniciar"),
+               confirmable(`svcstop:${m.name}:${sv.name}`, { label: "Detener", confirm: "Sí, detener", cls: "sm danger", run: () => serviceAction(m.name, sv.name, "stop") })]
+            : $("button", { class: "btn sm primary", onclick: () => serviceAction(m.name, sv.name, "start") }, "Iniciar")) : null);
+  })), $("div", { class: "list-foot" }, "Los servicios los crea tu IA con las herramientas astrea.service.*. Astrea los vigila y los vuelve a arrancar.")];
+}
+function tabActivity(m, key) {
+  loadAudit(key);
+  const c = S.audit[key] || {};
+  if (!c.t) return $("div", { class: "card empty" }, "Cargando la actividad…");
+  if (c.status === 501 || c.status === 404) return $("div", { class: "card empty" },
+    $("h2", {}, "Actividad no disponible"),
+    $("p", {}, "La versión del agente de este equipo todavía no guarda un registro de lo que hace la IA. " +
+"Actualízalo para verlo aquí."),
+    needsUpdate(m) ? confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", cls: "primary", run: () => updateAgent(key) }) : null);
+  if (c.err && !c.items) return $("div", { class: "callout t-bad" }, icon("alert"), $("div", {}, $("b", {}, "No se pudo leer la actividad"), $("p", {}, c.err)));
+  const all = c.items || [];
+  const items = S.showAuto ? all : all.filter(x => !AUTO.has(x.method));
+  const hidden = all.length - items.length;
+  return [
+    $("div", { class: "toolbar" },
+      $("span", { class: "muted" }, items.length ? `${items.length} ${items.length === 1 ? "acción" : "acciones"} recientes` : ""),
       $("span", { class: "spacer" }),
-      ep ? $("a", { href: base + "/dyn/" + ep, target: "_blank" }, "/dyn/" + ep) : $("span", { class: "na" }, "sin endpoint"),
-      sv.restarts ? $("span", { class: "na" }, "· " + sv.restarts + " reinicios") : null));
+      $("label", { class: "toggle" }, $("input", { type: "checkbox", checked: S.showAuto || null, onchange: e => { S.showAuto = e.target.checked; draw(); } }),
+        "Mostrar consultas automáticas" + (hidden && !S.showAuto ? ` (${hidden})` : ""))),
+    items.length
+      ? $("div", { class: "list timeline" }, items.map(x => $("div", { class: "li" },
+          $("span", { class: "when" }, when(x.ts)),
+          $("div", { class: "what" }, $("b", {}, verb(x.method)),
+            x.summary ? $("code", { title: x.summary }, x.summary) : null,
+            x.error ? $("div", { class: "err" }, x.error) : null),
+          x.ok ? null : chip("bad", "Falló"))))
+      : $("div", { class: "card empty" }, $("h2", {}, "Sin actividad reciente"),
+          $("p", {}, "Cuando tu IA use este equipo (ejecutar, mirar la pantalla, instalar…) lo verás aquí, paso a paso.")),
+    $("div", { class: "list-foot" }, "Sale del registro de auditoría del agente: queda guardado en ese equipo aunque cierres el panel."),
+  ];
+}
+
+function tabSystem(m, s) {
+  const a = m.admin || {}, idle = m.idle;
+  const li = (k, sub, v) => $("div", { class: "li" }, $("div", { class: "k" }, k, sub ? $("small", {}, sub) : null), $("div", { class: "v" }, v));
+  return [
+    $("div", { class: "list-title" }, "Equipo"),
+    $("div", { class: "list" },
+      li("Sistema operativo", null, osName(s) || "—"),
+      li("Nombre del equipo", null, s?.host?.hostname || "—"),
+      li("Encendido desde hace", null, s?.host?.uptime_sec != null ? uptime(s.host.uptime_sec) : "—"),
+      li("Sesión", "Si alguien está usando el equipo ahora", idle ? (idle.session === "none" ? "Nadie ha iniciado sesión" : idle.user_active ? "En uso" + (idle.process ? " · " + idle.process : "") : "Inactiva " + ago(idle.idle_sec)) : "—")),
+    $("div", { class: "list-title" }, "Permisos de la IA"),
+    $("div", { class: "list" },
+      li("Nivel de control", a.mode === "readonly" ? "La IA puede mirar, pero no cambiar nada" : "La IA puede ejecutar, instalar y usar el ratón y el teclado",
+         a.mode ? chip(a.mode === "readonly" ? "neutral" : "primary", a.mode === "readonly" ? "Solo lectura" : "Control total", false) : "—"),
+      li("Freno de emergencia", "Si está activado, el agente rechaza cualquier orden",
+         m.online ? $("span", { style: "display:inline-flex;gap:10px;align-items:center" },
+           a.locked ? chip("bad", "Activado") : chip("good", "Desactivado"),
+           a.locked ? confirmable("lock:" + m.name, { label: "Desactivar", confirm: "Sí, devolver el control", cls: "sm", run: () => setLock(m.name, false) })
+                    : confirmable("lock:" + m.name, { label: "Activar", confirm: "Sí, frenar", cls: "sm danger", run: () => setLock(m.name, true) }))
+           : (a.locked ? chip("bad", "Activado") : "—"))),
+    $("div", { class: "list-title" }, "Agente"),
+    $("div", { class: "list" },
+      li("Versión", needsReinstall(m) ? "Versión antigua (anterior a la 0.3). Se actualiza desde aquí." : null,
+         needsUpdate(m) ? $("span", { style: "display:inline-flex;gap:10px;align-items:center" },
+             a.version || "Antigua", confirmable("update:" + m.name, { label: "Actualizar", confirm: "Sí, actualizar", icon: "up", cls: "sm", run: () => updateAgent(m.name) }))
+           : a.version || "—"),
+      a.auto_update != null ? li("Actualización automática", "Se actualiza sola cuando sale una versión nueva", a.auto_update ? chip("good", "Activada") : chip("neutral", "Desactivada")) : null,
+      a.update_error ? li("Último error al actualizar", null, $("span", { style: "color:var(--bad)" }, a.update_error)) : null,
+      li("Dirección", "Dentro de tu red Tailscale", m.base ? $("code", {}, m.base.replace(/^https?:\/\//, "")) : "—")),
+    $("div", { class: "list", style: "margin-top:24px" },
+      li("Quitar del panel", "Deja de mostrarlo aquí y en Hermes. No desinstala nada en ese equipo.",
+         confirmable("rm:" + m.name, { label: "Quitar", confirm: "Sí, quitar", icon: "trash", cls: "sm danger", run: () => removeMachine(m.name) }))),
+  ];
+}
+
+function viewMachine(list, id) {
+  const idx = list.findIndex((m, i) => keyOf(m, i) === id);
+  if (idx < 0) return [$("div", { class: "card empty" }, $("h2", {}, "Equipo no encontrado"),
+    $("p", {}, `“${id}” ya no está en la lista. Puede que lo hayan quitado de machines.json.`),
+    $("a", { class: "btn", href: "#/" }, "Volver al resumen"))];
+  const m = list[idx], key = keyOf(m, idx);
+  const s = m.online ? m.stats : lastGood.get(key);
+  const title = titleOf(m, idx, s), p = presence(m, key);
+  const tab = route().tab;
+  const nSvc = services(m).length;
+
+  const head = [
+    $("div", { class: "crumbs" }, $("a", { href: "#/" }, "Resumen"), icon("chev"), title),
+    $("div", { class: "page-head" },
+      $("div", {},
+        $("h1", {}, title),
+        $("div", { class: "sub" }, chip(p.tone, p.label), p.detail ? $("span", {}, p.detail) : null,
+          s?.host?.uptime_sec != null && m.online ? $("span", { class: "muted" }, "· encendido hace " + uptime(s.host.uptime_sec)) : null)),
+      $("div", { class: "actions" },
+        needsUpdate(m) ? confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", run: () => updateAgent(key) }) : null,
+        m.online && !m.admin?.locked ? confirmable("lock:" + key, { label: "Frenar IA", confirm: "Sí, frenar", icon: "lock", cls: "danger", run: () => setLock(key, true) }) : null,
+        m.online ? $("button", { class: "btn primary", onclick: () => showShot(m.name || "", title) }, icon("desktop"), "Ver pantalla") : null))];
+
+  const err = !m.online ? explain(m.error || "") : null;
+  const callout = err ? $("div", { class: "callout t-bad" }, icon("alert"),
+    $("div", {}, $("b", {}, err.title), $("p", {}, err.body),
+      err.tips ? $("ul", {}, err.tips.map(t => $("li", {}, t))) : null,
+      err.raw ? $("p", { class: "muted", style: "margin-top:8px;font-size:12px" }, "Detalle técnico: " + err.raw) : null,
+      s ? $("p", { class: "muted", style: "margin-top:8px;font-size:12px" }, "Abajo verás los últimos datos que se recibieron.") : null)) : null;
+
+  const locked = m.online && m.admin?.locked ? $("div", { class: "callout t-bad" }, icon("lock"),
+    $("div", {}, $("b", {}, "Freno de emergencia activado"), $("p", {}, "La IA no puede hacer nada en este equipo hasta que lo desactives.")),
+    $("div", { class: "actions" }, confirmable("lock:" + key, { label: "Desactivar freno", confirm: "Sí, devolver el control", run: () => setLock(key, false) }))) : null;
+
+  const seg = $("div", { class: "segmented", role: "tablist", "aria-label": "Secciones del equipo" },
+    TABS.map(([k, label]) => $("button", { role: "tab", "aria-selected": String(tab === k),
+      onclick: () => { location.replace(machineHref(key, k)); } }, label, k === "svc" && nSvc ? $("span", { class: "n" }, String(nSvc)) : null)));
+
+  const body = tab === "svc" ? tabServices(m) : tab === "sys" ? tabSystem(m, s) : tab === "act" ? tabActivity(m, key) : tabPerformance(key, s);
+  return [head, callout, locked, seg, $("div", { role: "tabpanel" }, body)];
+}
+
+function addForm() {
+  const a = S.add;
+  if (a.ok) {
+    const k = a.ok.name;
+    return $("div", { class: "callout sm t-good" }, icon("check"),
+      $("div", {}, $("b", {}, `${k} ${a.ok.replaced ? "actualizado" : "añadido"}`),
+        $("p", {}, [a.ok.hostname, a.ok.os].filter(Boolean).join(" · ") || "Ya está conectado.", a.ok.note ? " " + a.ok.note : "")),
+      $("div", { class: "actions" },
+        $("a", { class: "btn sm primary", href: machineHref(k) }, "Ver equipo"),
+        $("button", { class: "btn sm ghost", onclick: () => { S.add = { text: "", name: "" }; draw(); } }, "Añadir otro")));
   }
-  return card;
+  return $("form", { onsubmit: e => { e.preventDefault(); addMachine(); } },
+    $("div", { class: "field" },
+      $("label", { for: "addText" }, "Ficha del equipo"),
+      $("textarea", { id: "addText", class: "input", placeholder: "Pega aquí el contenido de hub-config.txt…", spellcheck: "false", disabled: a.busy || null,
+        oninput: e => { S.add.text = e.target.value; } }, a.text)),
+    $("div", { class: "field" },
+      $("label", { for: "addName" }, "Nombre (opcional)"),
+      $("input", { id: "addName", class: "input", value: a.name, placeholder: "Si lo dejas vacío, usa el nombre del equipo", disabled: a.busy || null,
+        oninput: e => { S.add.name = e.target.value; } })),
+    a.err ? $("div", { class: "callout sm t-bad" }, icon("alert"), $("div", {}, $("b", {}, a.err), a.detail ? $("p", { class: "muted", style: "font-size:12px" }, a.detail) : null)) : null,
+    $("div", { style: "margin-top:14px" },
+      $("button", { class: "btn primary", type: "submit", disabled: a.busy || null },
+        a.busy ? [icon("refresh", "spin"), "Conectando con el equipo…"] : [icon("plus"), "Probar y añadir"])));
 }
 
-function explain(err) {
-  if (/unknown_method/.test(err)) return "El agente de esa PC es una versión antigua. Reinstálalo.";
-  if (/unauthorized|401/.test(err)) return "Token incorrecto para esta máquina.";
-  return "No se puede contactar con el agente (" + err + "). ¿Está encendida y en Tailscale?";
+function viewHelp() {
+  const step = (n, title, ...body) => $("div", { class: "card step" }, $("div", { class: "n" }, String(n)), $("h3", {}, title), ...body);
+  const term = (tone, label, text) => $("div", { class: "li" }, chip(tone, label), $("div", { class: "v", style: "text-align:left;margin-left:12px" }, text));
+  return [
+    $("div", { class: "page-head" }, $("div", {}, $("h1", {}, "Añadir un equipo"),
+      $("div", { class: "sub" }, "Tres pasos. Solo hay que hacerlos una vez por equipo."))),
+    $("div", { class: "steps" },
+      step(1, "Conecta los dos equipos a Tailscale",
+        $("p", {}, "Instala Tailscale en este ordenador y en el que quieres controlar, con la misma cuenta. Así se ven entre sí aunque estén en casas distintas, sin abrir puertos."),
+        $("p", { style: "margin-top:10px" }, $("a", { href: "https://tailscale.com/download", target: "_blank", rel: "noopener" }, "Descargar Tailscale →"))),
+      step(2, "Instala el agente en el otro equipo",
+        $("p", {}, "En Windows, descarga y abre ", $("b", {}, "astrea-agent.msi"), " desde la última versión. Al terminar deja una ficha con los datos de conexión en ", $("code", {}, "C:\\ProgramData\\Astrea\\hub-config.txt"), "."),
+        $("p", { style: "margin-top:10px" }, $("a", { href: "https://github.com/Solar2004/Astrea/releases/latest", target: "_blank", rel: "noopener" }, "Descargar Astrea →"))),
+      step(3, "Pega su ficha aquí",
+        $("p", {}, "Abre ", $("code", {}, "hub-config.txt"), " en el otro equipo, copia todo y pégalo debajo. Astrea comprobará que responde antes de guardarlo."),
+        addForm())),
+    $("div", { class: "list-title" }, "Qué significa cada estado"),
+    $("div", { class: "list glossary" },
+      term("good", "Libre", "Nadie está usando el equipo: tu IA puede trabajar en él sin molestar."),
+      term("warn", "En uso", "Hay una persona delante. Mejor no mover el ratón ni ocupar la gráfica."),
+      term("bad", "Sin conexión", "El equipo está apagado, sin internet o sin Tailscale."),
+      term("bad", "Bloqueada", "Se activó el freno de emergencia: el agente rechaza cualquier orden.")),
+    $("div", { class: "list-foot" }, "¿Algo no funciona? Ejecuta astrea-agent --diagnose en el otro equipo; la salida no incluye la clave."),
+  ];
 }
 
-const lastGood = new Map();
-
-function render(list) {
-  const root = document.getElementById("root");
-  root.replaceChildren(...list.map((m, idx) => {
-    const key = m.name || "m" + idx;
-    const s = m.online ? m.stats : lastGood.get(key);
-    if (m.online && m.stats) lastGood.set(key, m.stats);
-    const admin = m.admin || {};
-    const use = usage(m.idle);
-    const base = m.base || ""; // reserved; endpoints link relative to agent
-    const title = m.name || s?.host?.hostname || "Máquina " + (idx + 1);
-    const dotCls = !m.online ? "off" : (use && use.state === "busy" ? "busy" : "on");
-
-    const head = $("div", { class: "mhead" },
-      $("h2", {}, title),
-      $("span", { class: "status" }, $("span", { class: "dot " + dotCls }), m.online ? "En línea" : "Sin conexión"),
-      admin.mode ? $("span", { class: "badge" }, admin.mode === "readonly" ? "solo lectura" : "yolo") : null,
-      m.idle && m.idle.session === "none" ? $("span", { class: "badge" }, "sin escritorio") : null,
-      use ? $("span", { class: "badge " + use.state }, use.label) : null,
-      admin.locked ? $("span", { class: "badge locked" }, "🔒 bloqueado") : null,
-      s ? $("span", { class: "meta" }, [s.host?.platform, s.host?.platform_version].filter(Boolean).join(" ") +
-          (s.host?.uptime_sec != null ? ` · encendida ${uptime(s.host.uptime_sec)}` : "")) : null,
-      $("span", { class: "spacer" }),
-      m.online ? $("button", { class: "btn", onclick: () => showShot(m.name || "", title) }, "🖥 Ver pantalla") : null);
-
-    const sec = $("section", { class: "machine", id: slug(m.name || idx) }, head);
-    if (!m.online) sec.append($("div", { class: "error" }, explain(m.error || "")));
-    if (s) {
-      sec.append($("div", { class: "grid" },
-        cpuCard(key, s), memCard(key, s),
-        ...(s.gpus || []).map((g, i) => gpuCard(key, g, i)),
-        (s.gpus || []).length ? null : $("section", { class: "card" }, $("h3", {}, "Gráfica"), $("div", { class: "empty" }, "No se detectó ninguna GPU")),
-        diskCard(s),
-        servicesCard(base, m.services)));
-    }
-    return sec;
-  }));
+/* ---------- draw ---------- */
+function draw() {
+  drawSidebar();
+  const view = document.getElementById("view");
+  const r = route();
+  let content;
+  if (r.name === "help") content = viewHelp();
+  else if (S.list == null) content = [$("div", { class: "empty" }, S.ok ? "Conectando con los equipos…" : "El panel no responde: " + S.err)];
+  else if (r.name === "machine") content = viewMachine(S.list, r.id);
+  else content = viewOverview(S.list);
+  view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
+  document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea" : "Astrea";
 }
 
-/* ---------- screenshot modal ---------- */
+/* ---------- screen viewer ---------- */
 const shot = document.getElementById("shot");
-let shotMachine = "";
+let shotMachine = "", shotTimer = 0, shotLoading = false;
 function showShot(machine, title) {
   shotMachine = machine;
-  document.getElementById("shotTitle").textContent = "Pantalla · " + title;
+  document.getElementById("shotTitle").textContent = title;
+  document.getElementById("shotWhen").textContent = "";
+  document.getElementById("shotBody").replaceChildren($("div", { class: "msg" }, "Capturando la pantalla…"));
   shot.classList.add("open");
+  document.getElementById("shotClose").focus();
   loadShot();
 }
+function closeShot() {
+  shot.classList.remove("open");
+  document.getElementById("shotAuto").checked = false;
+  clearTimeout(shotTimer);
+}
 function loadShot() {
+  if (shotLoading) return;
+  shotLoading = true;
   const body = document.getElementById("shotBody");
-  body.replaceChildren($("div", { class: "msg" }, "Capturando…"));
   const img = new Image();
-  img.onload = () => body.replaceChildren(img);
-  img.onerror = () => body.replaceChildren($("div", { class: "msg" }, "No se pudo capturar (¿esta PC no tiene sesión de escritorio abierta?)."));
+  img.alt = "Pantalla de " + document.getElementById("shotTitle").textContent;
+  const done = () => {
+    shotLoading = false;
+    if (document.getElementById("shotAuto").checked && shot.classList.contains("open")) shotTimer = setTimeout(loadShot, 3000);
+  };
+  img.onload = () => { body.replaceChildren(img); document.getElementById("shotWhen").textContent = "Captura de las " + hhmmss(Date.now()); done(); };
+  img.onerror = () => { body.replaceChildren($("div", { class: "msg" }, $("b", {}, "No se pudo ver la pantalla"), $("br"), "Puede que nadie haya iniciado sesión en ese equipo.")); done(); };
   img.src = "/api/screenshot?machine=" + encodeURIComponent(shotMachine) + "&t=" + Date.now();
 }
-document.getElementById("shotClose").onclick = () => shot.classList.remove("open");
+document.getElementById("shotClose").onclick = closeShot;
 document.getElementById("shotReload").onclick = loadShot;
-shot.addEventListener("click", e => { if (e.target === shot) shot.classList.remove("open"); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") shot.classList.remove("open"); });
+document.getElementById("shotAuto").onchange = e => { clearTimeout(shotTimer); if (e.target.checked) loadShot(); };
+shot.addEventListener("click", e => { if (e.target === shot) closeShot(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeShot(); logs.classList.remove("open"); document.getElementById("app").classList.remove("nav-open"); } });
 
+/* ---------- mobile drawer ---------- */
+const app = document.getElementById("app");
+document.getElementById("menuBtn").onclick = () => app.classList.add("nav-open");
+document.getElementById("scrim").onclick = () => app.classList.remove("nav-open");
+let lastPath = "";
+window.addEventListener("hashchange", () => {
+  app.classList.remove("nav-open"); S.pending = null; draw();
+  const r = route(), path = r.name + (r.id || "");
+  if (path !== lastPath) window.scrollTo(0, 0); // switching tabs keeps the scroll
+  lastPath = path;
+});
+
+/* ---------- polling ---------- */
 async function loop() {
   try {
     const r = await fetch("/api/stats", { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    const list = await r.json();
-    recordAll(list, Date.now());
-    fleetBar(list);
-    // Don't rebuild the DOM under the cursor: it would drop the tooltip.
-    if (!document.querySelector(".spark svg:hover")) render(list);
-    document.getElementById("updated").textContent = list.length + " máquina(s) · actualizado " + hhmmss(Date.now());
+    S.list = await r.json();
+    S.ok = true; S.updatedAt = Date.now();
+    recordAll(S.list, S.updatedAt);
   } catch (e) {
-    document.getElementById("updated").textContent = "el panel no responde: " + e.message;
+    S.ok = false; S.err = e.message;
   }
+  // Don't rebuild the view under the cursor: it would drop the chart tooltip.
+  // Don't rebuild the view under the cursor (chart tooltip) or under a form being filled.
+  const hold = document.querySelector(".spark svg:hover") || route().name === "help" ||
+               document.activeElement?.matches?.("input, textarea, select");
+  if (hold) drawSidebar(); else draw();
   setTimeout(loop, POLL_MS);
 }
+loadVersion().then(draw);
+setInterval(loadVersion, 5 * 60 * 1000);
 loop();
 </script>
 </body>

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/astrea-logo-dark.svg">
+    <img src="assets/brand/astrea-logo.svg" alt="Astrea" width="280">
+  </picture>
+</p>
+
 # Astrea
 
 > Control total de una máquina remota **para tu agente de IA**. Como RustDesk,
@@ -93,6 +100,10 @@ Todo se actualiza solo: los agentes cada ~6 h (sin interrumpir jobs ni
 descargas) y el hub y el panel una vez al día. Para hacerlo ya:
 `astrea-hub update` (o `--check` para solo mirar). Detalle en
 [`docs/UPDATES.md`](docs/UPDATES.md).
+
+**¿Vienes de v0.2.0 / v0.2.1?** Una sola vez, en la PC principal: vuelve a
+ejecutar `install.sh hub` (paso 2) y luego `astrea-hub update --migrate`. Migra
+todas las PCs en remoto, sin ir a ninguna.
 
 ## Desde el código
 

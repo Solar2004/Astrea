@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Astrea</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B1F4B"/>
+      <stop offset=".55" stop-color="#2A2470"/>
+      <stop offset="1" stop-color="#4B2A8C"/>
+    </linearGradient>
+    <radialGradient id="halo" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#9DB8FF" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#9DB8FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#CFE0FF"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".14"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="228" fill="url(#sheen)"/>
+  <circle cx="512" cy="520" r="300" fill="url(#halo)"/>
+  <!-- orbit: the link to the remote machine -->
+  <ellipse cx="512" cy="520" rx="330" ry="120" transform="rotate(-24 512 520)"
+           fill="none" stroke="#B9CBFF" stroke-opacity=".45" stroke-width="14"/>
+  <path d="M512 196 C538 420 596 486 806 520 C596 554 538 620 512 860 C486 620 428 554 218 520 C428 486 486 420 512 196 Z"
+        fill="url(#star)"/>
+  <!-- node -->
+  <circle cx="808" cy="388" r="40" fill="#7CF0C8"/>
+  <circle cx="808" cy="388" r="40" fill="none" stroke="#1B1F4B" stroke-opacity=".35" stroke-width="8"/>
+</svg>
