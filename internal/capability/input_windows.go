@@ -56,8 +56,9 @@ const (
 	smCYVirtualScreen = 79
 )
 
-// INPUT structs mirror the Win32 layout. mouseKbdInput is a union large enough
-// for both MOUSEINPUT and KEYBDINPUT.
+// INPUT structs mirror the Win32 layout: 40 bytes on 64-bit. mouseKbdInput is
+// MOUSEINPUT, the largest member of the union, so KEYBDINPUT fits inside it.
+// SendInput rejects every event if cbSize is not exactly sizeof(INPUT).
 type input32 struct {
 	typ uint32
 	_   uint32 // padding to align the union on 64-bit
@@ -71,11 +72,16 @@ type mouseKbdInput struct {
 	dwFlags     uint32
 	time        uint32
 	dwExtraInfo uintptr
-	_           [8]byte // tail padding so size matches the larger union member
 }
 
-func sendInput(in *input32) {
-	procSendInput.Call(1, uintptr(unsafe.Pointer(in)), unsafe.Sizeof(*in))
+// sendInput fails when Windows did not inject the event (wrong size, input
+// blocked by UIPI or a secure desktop such as the lock screen or UAC).
+func sendInput(in *input32) error {
+	n, _, err := procSendInput.Call(1, uintptr(unsafe.Pointer(in)), unsafe.Sizeof(*in))
+	if n != 1 {
+		return fmt.Errorf("SendInput: %v (¿pantalla bloqueada o ventana de administrador?)", err)
+	}
+	return nil
 }
 
 func getSystemMetric(index int) int {
@@ -99,19 +105,20 @@ func (winInput) MouseClick(button string, double bool) error {
 	default:
 		down, up = mouseeventfLeftDown, mouseeventfLeftUp
 	}
-	click := func() {
+	click := func() error {
 		in := input32{typ: inputMouse}
 		in.u.dwFlags = down
-		sendInput(&in)
+		if err := sendInput(&in); err != nil {
+			return err
+		}
 		in.u.dwFlags = up
-		sendInput(&in)
+		return sendInput(&in)
 	}
-	click()
-	if double {
-		time.Sleep(40 * time.Millisecond)
-		click()
+	if err := click(); err != nil || !double {
+		return err
 	}
-	return nil
+	time.Sleep(40 * time.Millisecond)
+	return click()
 }
 
 func (winInput) KeyType(text string) error {
@@ -125,7 +132,9 @@ func (winInput) KeyType(text string) error {
 			kb.wVk = 0
 			kb.wScan = uint16(r)
 			kb.dwFlags = flags
-			sendInput(&in)
+			if err := sendInput(&in); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -161,8 +170,7 @@ func (winInput) MouseButton(button string, down bool) error {
 	if down {
 		in.u.dwFlags = flag[0]
 	}
-	sendInput(&in)
-	return nil
+	return sendInput(&in)
 }
 
 func (winInput) Scroll(dx, dy int) error {
@@ -170,13 +178,15 @@ func (winInput) Scroll(dx, dy int) error {
 		in := input32{typ: inputMouse}
 		in.u.dwFlags = mouseeventfWheel
 		in.u.mouseData = uint32(int32(-dy * wheelDelta)) // positive = away from the user (up)
-		sendInput(&in)
+		if err := sendInput(&in); err != nil {
+			return err
+		}
 	}
 	if dx != 0 {
 		in := input32{typ: inputMouse}
 		in.u.dwFlags = mouseeventfHWheel
 		in.u.mouseData = uint32(int32(dx * wheelDelta))
-		sendInput(&in)
+		return sendInput(&in)
 	}
 	return nil
 }
@@ -208,6 +218,7 @@ func vkOf(k string) uint16 {
 }
 
 func (winInput) KeyPress(keys []string) error {
+	var first error
 	send := func(k string, up bool) {
 		in := input32{typ: inputKeyboard}
 		kb := (*keybdInput)(unsafe.Pointer(&in.u))
@@ -218,13 +229,15 @@ func (winInput) KeyPress(keys []string) error {
 		if up {
 			kb.dwFlags |= keyeventfKeyUp
 		}
-		sendInput(&in)
+		if err := sendInput(&in); err != nil && first == nil {
+			first = err
+		}
 	}
 	for _, k := range keys {
 		send(k, false)
 	}
-	for i := len(keys) - 1; i >= 0; i-- {
+	for i := len(keys) - 1; i >= 0; i-- { // release even if a press failed
 		send(keys[i], true)
 	}
-	return nil
+	return first
 }
