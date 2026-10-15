@@ -379,19 +379,19 @@ func clipRunes(s string, n int) string {
 
 // finishedWork: the alert for a task that just stopped being current, or
 // false if it does not deserve one (replaced by the next task, unreadable).
-func (b *telegramBot) finishedWork(machine, id string) (string, bool) {
+func (p *panel) finishedWork(machine, id string) (workTask, string, bool) {
 	var res struct {
 		Task workTask `json:"task"`
 	}
-	if _, err := b.p.call(context.Background(), machine, "work.get", map[string]any{"id": id, "limit": 1}, &res, 8*time.Second); err != nil {
-		return "", false
+	if _, err := p.call(context.Background(), machine, "work.get", map[string]any{"id": id, "limit": 1}, &res, 8*time.Second); err != nil {
+		return workTask{}, "", false
 	}
 	t := res.Task
 	emoji, label := workStatus(t.Status)
 	switch t.Status {
 	case "done", "failed", "cancelled", "abandoned":
 	default:
-		return "", false
+		return workTask{}, "", false
 	}
 	text := fmt.Sprintf("%s <b>%s</b> · %s: <b>%s</b>\n⏱ %s", emoji, esc(machine), label, esc(t.Title), ago(t.duration()))
 	if t.Actions > 0 {
@@ -400,5 +400,5 @@ func (b *telegramBot) finishedWork(machine, id string) (string, bool) {
 	if t.Summary != "" {
 		text += "\n<i>" + esc(clipRunes(t.Summary, 600)) + "</i>"
 	}
-	return text, true
+	return t, text, true
 }

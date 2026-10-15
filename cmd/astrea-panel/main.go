@@ -7,7 +7,9 @@
 //	astrea-panel --ws ws://100.x.y.z:7700/ws --token <TOKEN>
 //	astrea-panel   # reads ~/.config/astrea/panel.json (several machines)
 //
-// With telegram.json next to the config it also notifies via Telegram (see telegram.go).
+// It watches the fleet and records notices (events.go); with telegram.json
+// next to the config it sends them to Telegram (telegram.go), with hermes.json
+// it wakes Hermes through its webhook (hermes.go).
 package main
 
 import (
@@ -75,6 +77,7 @@ type panel struct {
 	editMu   sync.Mutex       // serializes edits of the machines file
 	hist     historyStore     // CPU/RAM/GPU over the last 2 h (history.go)
 	work     *workCache       // last known tasks per machine (workcache.go)
+	events   *eventLog        // fleet notices (events.go)
 }
 
 func main() {
@@ -93,7 +96,7 @@ func main() {
 
 	logger := log.New(os.Stderr, "astrea-panel ", log.LstdFlags)
 
-	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}, hist: historyStore{rings: map[string]*ring{}}, work: loadWorkCache(workCachePath())}
+	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}, hist: historyStore{rings: map[string]*ring{}}, work: loadWorkCache(workCachePath()), events: newEventLog()}
 	// Load once now (for the startup log), but the stats handler reloads on
 	// every request, so adding machines to panel.json needs no restart and an
 	// empty/missing config is not fatal — the panel just shows nothing yet.
@@ -102,6 +105,8 @@ func main() {
 	}
 	go p.sampleLoop(context.Background())
 	startTelegram(p, telegramConfigPath(*cfgPath), logger)
+	startHermes(p, hermesConfigPath(*cfgPath), logger)
+	go p.watch(20 * time.Second)
 
 	// Go does not know .webmanifest; browsers want this type for the PWA.
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
@@ -120,6 +125,7 @@ func main() {
 	mux.HandleFunc("/api/work/cancel", p.handleWorkCancel)
 	mux.HandleFunc("/api/service", p.handleService)
 	mux.HandleFunc("/api/service/logs", p.handleServiceLogs)
+	mux.HandleFunc("/api/events", p.handleEvents)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {

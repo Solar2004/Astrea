@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Solar2004/Astrea/internal/fleet"
@@ -55,6 +56,7 @@ func main() {
 	cacheDir := fs.String("cache-dir", defaultCacheDir(), "directory for the cached capability lists")
 	callTimeout := fs.Duration("call-timeout", 150*time.Second, "max wait per tool call (calls with timeout_sec wait timeout_sec+15s)")
 	refresh := fs.Duration("refresh", 30*time.Second, "how often to re-sync the tool list with the agents (0 = never)")
+	panelURL := fs.String("panel", orEnv("ASTREA_PANEL", "http://127.0.0.1:7780"), "astrea-panel URL, where fleet.events reads the notices")
 	_ = fs.String("caps", "", "deprecated: derived from --ws")
 	_ = fs.Parse(os.Args[1:])
 
@@ -72,6 +74,7 @@ func main() {
 	}, &mcp.ServerOptions{Instructions: serverInstructions})
 
 	h := newHub(server, fleet.New(machines), *prefix, *cacheDir, *callTimeout, logger)
+	addEventsTool(server, *prefix, strings.TrimRight(*panelURL, "/"))
 	h.loadCaches()
 	_ = h.sync(ctx)
 	if *refresh > 0 {
@@ -118,4 +121,6 @@ const serverInstructions = `Astrea controls the owner's machines. The owner watc
 Every action that changes a machine (exec, fs.write, mouse/keyboard, jobs, services, tasks…) takes a "work" argument saying which task it belongs to:
 - {"title": "...", "detail": "..."} opens a new task on that machine (closing the previous one) — any kind of work: "Install and configure Blender", "Run the test suite of project X", "Build the release of the app", "Clean up the Downloads folder";
 - "continue" means it is part of the task already open there.
-Report progress with work.update ("3/5") and close with work.end (done / failed / cancelled, plus a short summary of what was produced). Looking (fleet.status, sys.stats, screen.capture, fs.read…) needs no task.`
+Report progress with work.update ("3/5") and close with work.end (done / failed / cancelled, plus a short summary of what was produced). Looking (fleet.status, sys.stats, screen.capture, fs.read…) needs no task.
+
+When you wait for something long (a job, a download, a render), call fleet.events with wait_sec instead of polling; the owner may also wake you with an "Aviso de Astrea" message when something important happens.`

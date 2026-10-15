@@ -41,10 +41,9 @@ const (
 )
 
 type telegramConfig struct {
-	Token    string `json:"token"`
-	User     string `json:"user"`                   // username autorizado, sin @
-	ChatID   int64  `json:"chat_id,omitempty"`      // se aprende con /start
-	Interval int    `json:"interval_sec,omitempty"` // cada cuánto se vigila (def. 20)
+	Token  string `json:"token"`
+	User   string `json:"user"`              // username autorizado, sin @
+	ChatID int64  `json:"chat_id,omitempty"` // se aprende con /start
 	// Alerts silencia (false) los avisos; los del freno se mandan siempre.
 	Alerts *bool `json:"alerts,omitempty"`
 }
@@ -92,9 +91,6 @@ func startTelegram(p *panel, path string, logger *log.Logger) {
 		return
 	}
 	cfg.User = strings.TrimPrefix(cfg.User, "@")
-	if cfg.Interval <= 0 {
-		cfg.Interval = 20
-	}
 	b := &telegramBot{p: p, path: path, logger: logger, cfg: cfg,
 		client:  &http.Client{Timeout: 70 * time.Second},
 		botLock: map[string]time.Time{}, keys: map[string]tgAction{}}
@@ -105,7 +101,12 @@ func startTelegram(p *panel, path string, logger *log.Logger) {
 	}
 	go b.setCommands()
 	go b.listen()
-	go b.watch()
+	p.events.subscribe(b.alert)
+	go func() {
+		if list := p.pollAll(); len(list) > 0 && b.alertsOn() {
+			b.notify("🛰 Astrea vigilando la flota.\n\n"+summary(list), nil)
+		}
+	}()
 }
 
 func telegramConfigPath(machinesPath string) string {
@@ -330,23 +331,8 @@ func stateEmoji(label string) string {
 	return "🟢"
 }
 
-func (b *telegramBot) pollAll() []machineStatus {
-	machines := b.p.reload()
-	out := make([]machineStatus, len(machines))
-	var wg sync.WaitGroup
-	for i, m := range machines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			out[i] = b.p.poll(context.Background(), m)
-		}()
-	}
-	wg.Wait()
-	return out
-}
-
 func (b *telegramBot) fleetView(onlyOnline bool) (view, error) {
-	all := b.pollAll()
+	all := b.p.pollAll()
 	list := all
 	if onlyOnline {
 		list = nil
@@ -941,167 +927,32 @@ func (b *telegramBot) saveLocked() {
 	}
 }
 
-// --- vigilancia y avisos ---
+// --- avisos ---
 
-// machineWatch es lo que se sabe de un equipo entre rondas.
-type machineWatch struct {
-	online   bool
-	fails    int       // fallos seguidos (para no avisar por un timeout suelto)
-	since    time.Time // desde cuándo está en el estado actual
-	locked   bool
-	ramSince time.Time         // desde cuándo la RAM está ≥ 95 %
-	services map[string]string // último estado de cada servicio
-	work     string            // tarea en curso (id)
-}
-
-const alertCooldown = 30 * time.Minute
-
-// watch sondea la flota y avisa de los cambios. La primera ronda solo fija la
-// línea base y manda un resumen.
-func (b *telegramBot) watch() {
-	state := map[string]*machineWatch{}
-	sent := map[string]time.Time{} // equipo|métrica → último aviso
-	first := true
-	tick := time.NewTicker(time.Duration(b.cfg.Interval) * time.Second)
-	defer tick.Stop()
-	for ; ; <-tick.C {
-		list := b.pollAll()
-		now := time.Now()
-		seen := map[string]bool{}
-		type alert struct {
-			text, machine string
-			always        bool
-			kind          string // botón: "m" (equipo, por defecto) o "t" (tareas)
-		}
-		var alerts []alert
-		threshold := func(name, metric, text string) {
-			k := name + "|" + metric
-			if now.Sub(sent[k]) < alertCooldown {
-				return
-			}
-			sent[k] = now
-			alerts = append(alerts, alert{text: text, machine: name})
-		}
-
-		for _, s := range list {
-			name := s.Name
-			seen[name] = true
-			c := cardFrom(s)
-			w := state[name]
-			if w == nil {
-				w = &machineWatch{online: s.Online, since: now, locked: c.Locked, services: map[string]string{}}
-				if t, ok := currentWork(s); ok {
-					w.work = t.ID
-				}
-				state[name] = w
-				b.fillServices(w, s, nil)
-				continue // primera vez que lo vemos: sin aviso
-			}
-			// Encendido / apagado (dos fallos seguidos antes de darlo por apagado).
-			switch {
-			case s.Online:
-				w.fails = 0
-				if !w.online {
-					alerts = append(alerts, alert{text: fmt.Sprintf("🟢 <b>%s</b> se encendió (estuvo apagado %s)", esc(name), ago(now.Sub(w.since))), machine: name})
-					w.online, w.since = true, now
-				}
-			case w.online:
-				if w.fails++; w.fails >= 2 {
-					alerts = append(alerts, alert{text: fmt.Sprintf("🔴 <b>%s</b> se apagó o perdió conexión (estuvo encendido %s)", esc(name), ago(now.Sub(w.since))), machine: name})
-					w.online, w.since = false, now
-				}
-			}
-			if !s.Online {
-				continue
-			}
-			// Freno: siempre se avisa, salvo si lo acaba de cambiar el propio bot.
-			if c.Locked != w.locked {
-				b.mu.Lock()
-				byBot := now.Sub(b.botLock[name]) < 2*time.Minute
-				b.mu.Unlock()
-				if !byBot {
-					t := fmt.Sprintf("🔒 <b>%s</b>: freno de emergencia <b>activado</b>. La IA no puede hacer nada ahí.", esc(name))
-					if !c.Locked {
-						t = fmt.Sprintf("🔓 <b>%s</b>: freno de emergencia <b>desactivado</b>. La IA vuelve a tener control.", esc(name))
-					}
-					alerts = append(alerts, alert{text: t, machine: name, always: true})
-				}
-				w.locked = c.Locked
-			}
-			// Tareas: avisa cuando termina la que estaba en curso.
-			cur, _ := currentWork(s)
-			if w.work != "" && cur.ID != w.work {
-				if t, ok := b.finishedWork(name, w.work); ok {
-					alerts = append(alerts, alert{text: t, machine: name, kind: "t"})
-				}
-			}
-			w.work = cur.ID
-			// Umbrales.
-			if c.Stats != nil {
-				for _, g := range c.Stats.GPUs {
-					if g.TempC != nil && *g.TempC >= 85 {
-						threshold(name, "gpu-temp", fmt.Sprintf("🌡 <b>%s</b>: la gráfica está a %.0f °C", esc(name), *g.TempC))
-					}
-				}
-				for _, d := range c.Stats.Disks {
-					if d.UsedPct >= 90 {
-						threshold(name, "disk|"+d.Mount, fmt.Sprintf("💾 <b>%s</b>: el disco %s está al %.0f %% (quedan %s)", esc(name), esc(d.Mount), d.UsedPct, cardBytes(d.Total-d.Used)))
-					}
-				}
-				if val(c.Stats.Memory.UsedPct) >= 95 {
-					if w.ramSince.IsZero() {
-						w.ramSince = now
-					} else if now.Sub(w.ramSince) >= 2*time.Minute {
-						threshold(name, "ram", fmt.Sprintf("🧠 <b>%s</b>: la memoria lleva %s al %.0f %%", esc(name), ago(now.Sub(w.ramSince)), val(c.Stats.Memory.UsedPct)))
-					}
-				} else {
-					w.ramSince = time.Time{}
-				}
-			}
-			b.fillServices(w, s, func(svc string) {
-				threshold(name, "svc|"+svc, fmt.Sprintf("⚙️ <b>%s</b>: el servicio <b>%s</b> ha fallado", esc(name), esc(svc)))
-			})
-		}
-		for name := range state {
-			if !seen[name] {
-				delete(state, name)
-			}
-		}
-
-		if first {
-			first = false
-			if len(list) > 0 && b.alertsOn() {
-				b.notify("🛰 Astrea vigilando la flota.\n\n"+summary(list), nil)
-			}
-			continue
-		}
-		for _, a := range alerts {
-			if a.always || b.alertsOn() {
-				button := btn("Ver equipo", "m:"+a.machine)
-				if a.kind == "t" {
-					button = btn("📋 Ver tareas", "t:"+a.machine)
-				}
-				b.notify(a.text, inline([]map[string]string{button}))
-			}
-		}
-	}
-}
-
-// fillServices actualiza el estado de los servicios y llama a failed por cada
-// uno que acaba de pasar a "failed".
-func (b *telegramBot) fillServices(w *machineWatch, s machineStatus, failed func(string)) {
-	var res struct {
-		Services []tgService `json:"services"`
-	}
-	if len(s.Services) == 0 || json.Unmarshal(s.Services, &res) != nil {
+// alert manda a Telegram un aviso del registro (events.go). Los de alguien
+// sentado / libre no: serían demasiados. Los del freno llegan siempre, salvo
+// si lo acaba de cambiar el propio bot.
+func (b *telegramBot) alert(e event) {
+	switch e.Kind {
+	case "busy", "free":
 		return
-	}
-	for _, x := range res.Services {
-		if failed != nil && x.State == "failed" && w.services[x.Name] != "failed" && w.services[x.Name] != "" {
-			failed(x.Name)
+	case "lock", "unlock":
+		b.mu.Lock()
+		byBot := time.Since(b.botLock[e.Machine]) < 2*time.Minute
+		b.mu.Unlock()
+		if byBot {
+			return
 		}
-		w.services[x.Name] = x.State
+	default:
+		if !b.alertsOn() {
+			return
+		}
 	}
+	button := btn("Ver equipo", "m:"+e.Machine)
+	if e.button == "t" {
+		button = btn("📋 Ver tareas", "t:"+e.Machine)
+	}
+	b.notify(e.html, inline([]map[string]string{button}))
 }
 
 // summary: "🟢 f3-1 · Libre\n🔴 pc-aula · Sin conexión".
