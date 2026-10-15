@@ -103,30 +103,19 @@ func (p *panel) sampleOnce(ctx context.Context) {
 			p.mu.Lock()
 			p.lastSeen[m.Name] = time.Now().UnixMilli()
 			p.mu.Unlock()
-			var st struct {
-				CPU struct {
-					Usage float64 `json:"usage_percent"`
-				} `json:"cpu"`
-				Memory struct {
-					UsedPercent float64 `json:"used_percent"`
-				} `json:"memory"`
-				GPUs []struct {
-					Usage     *float64 `json:"usage_percent"`
-					VRAMTotal uint64   `json:"vram_total"`
-					VRAMUsed  *uint64  `json:"vram_used"`
-				} `json:"gpus"`
-			}
+			// Same GPU as the cards (pickGPU), so number and chart agree.
+			var st cardStats
 			if json.Unmarshal(res.Result, &st) != nil {
 				return
 			}
-			s := sample{st.CPU.Usage, st.Memory.UsedPercent, -1}
-			if len(st.GPUs) > 0 {
-				g := st.GPUs[0]
+			s := sample{val(st.CPU.Usage), val(st.Memory.UsedPct), -1}
+			if g := pickGPU(st.GPUs); g >= 0 {
+				x := st.GPUs[g]
 				switch {
-				case g.Usage != nil:
-					s.gpu = *g.Usage
-				case g.VRAMUsed != nil && g.VRAMTotal > 0:
-					s.gpu = 100 * float64(*g.VRAMUsed) / float64(g.VRAMTotal)
+				case x.Usage != nil:
+					s.gpu = *x.Usage
+				case x.VRAMUsed != nil && x.VRAMTotal > 0:
+					s.gpu = 100 * float64(*x.VRAMUsed) / float64(x.VRAMTotal)
 				}
 			}
 			got[i] = s
