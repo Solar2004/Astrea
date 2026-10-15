@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net"
@@ -67,6 +68,7 @@ type panel struct {
 	mu       sync.Mutex
 	machines []Machine
 	clients  map[string]*transport.ReconnectingClient // keyed by ws URL, reused across reloads
+	latest   latestCache
 }
 
 func main() {
@@ -76,7 +78,12 @@ func main() {
 	cfgPath := flag.String("config", defaultConfigPath(), "JSON file listing machines: {\"machines\":[{\"name\",\"ws\",\"token\"}]}")
 	listen := flag.String("listen", "127.0.0.1:7780", "address to serve the panel on")
 	open := flag.Bool("open", true, "open the panel in the browser")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("astrea-panel %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+		return
+	}
 
 	logger := log.New(os.Stderr, "astrea-panel ", log.LstdFlags)
 
@@ -94,6 +101,8 @@ func main() {
 	mux.Handle("/", http.FileServer(http.FS(static)))
 	mux.HandleFunc("/api/stats", p.handleStats)
 	mux.HandleFunc("/api/screenshot", p.handleScreenshot)
+	mux.HandleFunc("/api/version", p.handleVersion)
+	mux.HandleFunc("/api/update", p.handleUpdate)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {

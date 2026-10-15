@@ -87,6 +87,13 @@ Reinicia Hermes: aparecen las herramientas `astrea.*`. Con varias PCs, cada una
 gana un argumento `machine` y `astrea.fleet.status` las resume (ver
 [`docs/FLEET.md`](docs/FLEET.md)).
 
+## Actualizaciones
+
+Todo se actualiza solo: los agentes cada ~6 h (sin interrumpir jobs ni
+descargas) y el hub y el panel una vez al día. Para hacerlo ya:
+`astrea-hub update` (o `--check` para solo mirar). Detalle en
+[`docs/UPDATES.md`](docs/UPDATES.md).
+
 ## Desde el código
 
 ```sh
@@ -114,6 +121,7 @@ make test       # tests
 | `astrea.task.define/list/get/delete/run` | Automatizaciones creadas por la IA; cada una es su propia tool `astrea.task.<name>` |
 | `astrea.endpoint.create/list/delete` | APIs HTTP dinámicas en `/dyn/<name>` (exec/proxy/static/task) |
 | `astrea.admin.lock/status/stop` | Kill switch y control del agente                 |
+| `astrea.agent.update/restart` | Actualizar el agente a la última release (verificada) y reiniciarlo |
 | `astrea.fleet.status` | (hub) Resumen de todas las PCs: online, CPU/RAM, GPUs con VRAM libre, quién está activo, servicios |
 
 ### Endpoints dinámicos — el diferenciador

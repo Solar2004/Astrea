@@ -32,6 +32,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/supervise"
 	"github.com/Solar2004/Astrea/internal/task"
 	"github.com/Solar2004/Astrea/internal/transport"
+	"github.com/Solar2004/Astrea/internal/update"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -72,6 +73,14 @@ func openLog(path string) (*os.File, error) {
 }
 
 func main() {
+	if logger := run(); logger != nil {
+		restartAfterExit(logger)
+	}
+}
+
+// run is the agent's whole life; it returns the logger once it has shut down
+// cleanly (services stopped, logs flushed), nil for one-shot modes.
+func run() *log.Logger {
 	cfgPath := flag.String("config", config.DefaultPath(), "path to config file")
 	addr := flag.String("addr", "", "listen address (overrides config; default 0.0.0.0:7700)")
 	token := flag.String("token", "", "bearer token (overrides config / ASTREA_TOKEN)")
@@ -86,11 +95,11 @@ func main() {
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("astrea-agent %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
-		return
+		return nil
 	}
 	if *diagnose {
 		runDiagnose(*cfgPath)
-		return
+		return nil
 	}
 	switch *role {
 	case roleFull, roleHeadless, roleGUI:
@@ -123,6 +132,9 @@ func main() {
 		}
 	}()
 	logger.Printf("astrea-agent %s %s/%s starting (role %s, config %s)", version, runtime.GOOS, runtime.GOARCH, *role, *cfgPath)
+	if exe, err := update.Self(); err == nil {
+		update.CleanupOld(exe)
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -151,8 +163,8 @@ func main() {
 	defer stop()
 
 	if *role == roleGUI {
-		runGUIHelper(ctx, cfg, *guiAddr, logger)
-		return
+		runGUIHelper(ctx, cfg, *guiAddr, logger, stop)
+		return logger
 	}
 
 	// Security: guard (allow/deny + kill switch) and audit log.
@@ -181,8 +193,10 @@ func main() {
 	reg.Register(capability.ProcKill{})
 	// Input, screen and idle detection need the desktop session: served here,
 	// or (headless) forwarded to the gui helper running in that session.
+	var bridge *guibridge.Bridge
 	if *role == roleHeadless {
-		registerGUIProxies(reg, guibridge.New("ws://"+*guiAddr+"/ws", cfg.Token))
+		bridge = guibridge.New("ws://"+*guiAddr+"/ws", cfg.Token)
+		registerGUIProxies(reg, bridge)
 	} else {
 		for _, c := range guiCaps() {
 			reg.Register(c)
@@ -236,12 +250,8 @@ func main() {
 	reg.Register(capability.NetDownloadStatus{Mgr: downloads})
 	reg.Register(capability.NetDownloadCancel{Mgr: downloads})
 	// Power: keep the PC awake while it serves or downloads (auto), detect a present user.
-	keeper, err := power.NewKeeper(cfg.KeepAwake, func() bool {
-		for _, s := range svcs.List() {
-			if s.State == "running" || s.State == "starting" || s.State == "backoff" {
-				return true
-			}
-		}
+	// working: a job or download in flight (a restart would lose it).
+	working := func() bool {
 		for _, j := range jobs.List() {
 			if j.State == supervise.JobRunning {
 				return true
@@ -253,6 +263,14 @@ func main() {
 			}
 		}
 		return false
+	}
+	keeper, err := power.NewKeeper(cfg.KeepAwake, func() bool {
+		for _, s := range svcs.List() {
+			if s.State == "running" || s.State == "starting" || s.State == "backoff" {
+				return true
+			}
+		}
+		return working()
 	})
 	if err != nil {
 		logger.Fatalf("keep_awake: %v", err)
@@ -260,9 +278,23 @@ func main() {
 	reg.Register(capability.PowerAwake{Keeper: keeper})
 	reg.Register(capability.PowerWake{})
 	reg.Register(capability.PowerAction{})
+	// Self-update from GitHub Releases (agent.update) and restart.
+	upd := &updater{mode: orDefault(cfg.AutoUpdate, "auto"), stop: stop, logger: logger, busy: working}
+	if bridge != nil {
+		upd.gui = func(ctx context.Context) error {
+			if !bridge.Available(ctx) {
+				return nil // nobody logged in: the helper starts with the new binary
+			}
+			_, err := bridge.Call(ctx, "agent.restart", json.RawMessage(`{}`))
+			return err
+		}
+	}
+	reg.Register(agentUpdate{u: upd})
+	reg.Register(agentRestart{stop: stop})
+	go upd.loop(ctx)
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
-	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode})
+	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode, Extra: upd.status})
 	reg.Register(capability.AdminStop{Stop: stop})
 
 	tok := auth.New(cfg.Token)
@@ -289,4 +321,5 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	return logger
 }

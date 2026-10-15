@@ -30,6 +30,10 @@ type Config struct {
 	// KeepAwake is the sleep inhibitor mode: "auto" (default; awake while a
 	// service, job or download runs), "always" or "off".
 	KeepAwake string `json:"keep_awake,omitempty"`
+	// AutoUpdate controls self-updates from GitHub Releases: "auto" (default;
+	// checks every few hours and installs when no job or download is running),
+	// "notify" (only reports a newer version in admin.status) or "off".
+	AutoUpdate string `json:"auto_update,omitempty"`
 }
 
 // Permission modes.

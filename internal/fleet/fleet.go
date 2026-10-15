@@ -195,6 +195,12 @@ type Status struct {
 	// unavailable, but it is free for GPU work.
 	Desktop  *bool     `json:"desktop,omitempty"`
 	Services []Service `json:"services,omitempty"`
+	// Version is the agent release ("" for agents older than v0.3.0, which
+	// cannot update themselves). UpdateAvailable comes from the agent's own
+	// periodic check against GitHub Releases.
+	Version         string `json:"version,omitempty"`
+	LatestVersion   string `json:"latest_version,omitempty"`
+	UpdateAvailable bool   `json:"update_available,omitempty"`
 }
 
 // StatusAll snapshots every node in parallel. Offline nodes are reported, not
@@ -216,15 +222,19 @@ func (n *Node) Status(ctx context.Context) Status {
 	defer cancel()
 
 	var admin struct {
-		OS     string `json:"os"`
-		Mode   string `json:"mode"`
-		Locked bool   `json:"locked"`
+		OS              string `json:"os"`
+		Mode            string `json:"mode"`
+		Locked          bool   `json:"locked"`
+		Version         string `json:"version"`
+		LatestVersion   string `json:"latest_version"`
+		UpdateAvailable bool   `json:"update_available"`
 	}
 	if err := n.Call(ctx, "admin.status", &admin); err != nil {
 		st.Error = err.Error()
 		return st
 	}
 	st.Online, st.OS, st.Mode, st.Locked = true, admin.OS, admin.Mode, admin.Locked
+	st.Version, st.LatestVersion, st.UpdateAvailable = admin.Version, admin.LatestVersion, admin.UpdateAvailable
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -321,11 +331,71 @@ func (n *Node) Status(ctx context.Context) Status {
 
 // Call invokes method with no arguments and decodes the result into out.
 func (n *Node) Call(ctx context.Context, method string, out any) error {
-	res, err := n.Client.Call(ctx, method, map[string]any{})
+	return n.CallWith(ctx, method, map[string]any{}, out)
+}
+
+// CallWith invokes method with args and decodes the result into out.
+func (n *Node) CallWith(ctx context.Context, method string, args, out any) error {
+	res, err := n.Client.Call(ctx, method, args)
 	if err != nil {
 		return err
 	}
 	return json.Unmarshal(res.Result, out)
+}
+
+// TooOldForUpdate explains an agent without agent.update.
+const TooOldForUpdate = "agente anterior a v0.3.0 sin auto-update: reinstálalo una vez (MSI o install.ps1/install.sh) y a partir de ahí se actualiza solo"
+
+// UpdateResult is what agent.update reports for one node.
+type UpdateResult struct {
+	Name    string `json:"name"`
+	Current string `json:"current,omitempty"`
+	Latest  string `json:"latest,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Updated bool   `json:"updated"`
+	Note    string `json:"note,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// Update asks one node to update its agent (agent.update). checkOnly only
+// reports versions. Agents from before v0.3.0 lack agent.update: they need
+// one manual reinstall, after which they keep themselves current.
+func (n *Node) Update(ctx context.Context, checkOnly, force bool) UpdateResult {
+	r := UpdateResult{Name: n.Name}
+	// Offline machines answer nothing; do not hold the whole fleet for them.
+	pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+	var probe struct {
+		Version string `json:"version"`
+	}
+	err := n.Call(pctx, "admin.status", &probe)
+	pcancel()
+	if err != nil {
+		r.Error = "sin conexión (¿apagada o fuera del tailnet?)"
+		return r
+	}
+	r.Current = probe.Version
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	err = n.CallWith(ctx, "agent.update", map[string]any{"check_only": checkOnly, "force": force}, &r)
+	r.Name = n.Name
+	if err != nil {
+		r.Error = err.Error()
+		if strings.Contains(r.Error, "unknown method") {
+			r.Error = TooOldForUpdate
+		}
+	}
+	return r
+}
+
+// UpdateAll runs Update on every node in parallel, in config order.
+func (f *Fleet) UpdateAll(ctx context.Context, checkOnly, force bool) []UpdateResult {
+	out := make([]UpdateResult, len(f.Nodes))
+	idx := map[*Node]int{}
+	for i, n := range f.Nodes {
+		idx[n] = i
+	}
+	f.Each(func(n *Node) { out[idx[n]] = n.Update(ctx, checkOnly, force) })
+	return out
 }
 
 func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }

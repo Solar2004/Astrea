@@ -40,6 +40,8 @@ func (a AdminLock) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (a
 type AdminStatus struct {
 	Guard *security.Guard
 	Mode  string
+	// Extra, if set, adds fields such as version and update state.
+	Extra func() map[string]any
 }
 
 func (AdminStatus) Name() string { return "admin.status" }
@@ -47,18 +49,24 @@ func (AdminStatus) Name() string { return "admin.status" }
 func (AdminStatus) Describe() Descriptor {
 	return Descriptor{
 		Name:        "admin.status",
-		Description: "Report agent OS, architecture, permission mode (yolo/readonly) and kill-switch (lock) state.",
+		Description: "Report agent version (and whether a newer release exists), OS, architecture, permission mode (yolo/readonly) and kill-switch (lock) state.",
 		InputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
 	}
 }
 
 func (a AdminStatus) Invoke(_ context.Context, _ json.RawMessage, _ Emit) (any, error) {
-	return map[string]any{
+	out := map[string]any{
 		"os":     runtime.GOOS,
 		"arch":   runtime.GOARCH,
 		"mode":   a.Mode,
 		"locked": a.Guard.Locked(),
-	}, nil
+	}
+	if a.Extra != nil {
+		for k, v := range a.Extra() {
+			out[k] = v
+		}
+	}
+	return out, nil
 }
 
 // AdminStop shuts the agent process down gracefully.

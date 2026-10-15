@@ -112,6 +112,42 @@ UNIT
   fi
 }
 
+# install_update_timer: una vez al día `astrea-hub update` pone hub, panel y
+# los agentes de la flota en la última release (los agentes además se
+# actualizan solos). Desactivar: systemctl --user disable --now astrea-update.timer
+install_update_timer() {
+  local dir="${HOME}/.config/systemd/user"
+  mkdir -p "$dir"
+  cat >"${dir}/astrea-update.service" <<UNIT
+[Unit]
+Description=Astrea — actualizar hub, panel y agentes a la última release
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${BINDIR}/astrea-hub update --config ${CFGDIR}/machines.json
+UNIT
+  cat >"${dir}/astrea-update.timer" <<UNIT
+[Unit]
+Description=Astrea — buscar actualizaciones cada día
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1d
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl --user daemon-reload 2>/dev/null || true
+  if systemctl --user enable --now astrea-update.timer 2>/dev/null; then
+    ok "Actualizaciones automáticas: cada día (astrea-update.timer)"
+  else
+    warn "No pude activar astrea-update.timer; actualiza a mano con 'astrea-hub update'."
+  fi
+}
+
 # seed_machines crea un machines.json de ejemplo si no hay ninguno, para que el
 # hub y el panel tengan dónde leer.
 seed_machines() {
@@ -134,6 +170,7 @@ hub)
   download astrea-panel
   seed_machines
   install_panel_service
+  install_update_timer
   cat <<EOF
 
 ==================== LISTO (control) ====================
@@ -158,6 +195,9 @@ Hub y panel instalados en ${BINDIR}.
    Reinicia Hermes: aparecerán las herramientas astrea.*
 
 3) Panel de hardware: http://127.0.0.1:7780
+
+4) Actualizaciones: automáticas (agentes cada ~6 h, hub y panel cada día).
+   A mano: astrea-hub update   ·   solo mirar: astrea-hub update --check
 =========================================================
 EOF
   ;;
@@ -189,6 +229,8 @@ After=network-online.target
 
 [Service]
 ExecStart=${BINDIR}/astrea-agent --config ${CFGDIR}/config.json
+# El agente se actualiza solo: sale con código 75 y systemd arranca el nuevo.
+Environment=ASTREA_SUPERVISED=1
 Restart=always
 RestartSec=3
 

@@ -10,6 +10,7 @@
 //	astrea-hub                       # machines from ~/.config/astrea/machines.json
 //	astrea-hub --ws ws://100.x.y.z:7700/ws --token T   # a single machine
 //	astrea-hub gateway               # OpenAI-compatible API over the fleet's models
+//	astrea-hub update                # hub, panel and every agent to the latest release
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/Solar2004/Astrea/internal/fleet"
@@ -30,9 +32,18 @@ import (
 var version = "dev"
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "gateway" {
-		runGateway(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "gateway":
+			runGateway(os.Args[2:])
+			return
+		case "update":
+			runUpdate(os.Args[2:])
+			return
+		case "--version", "-version", "version":
+			fmt.Printf("astrea-hub %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+			return
+		}
 	}
 
 	fs := flag.NewFlagSet("astrea-hub", flag.ExitOnError)

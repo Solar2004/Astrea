@@ -38,6 +38,7 @@ func runDiagnose(cfgPath string) {
 	fmt.Fprintf(out, "data_dir:  %s\n", dataDir)
 	fmt.Fprintf(out, "mode:      %s\n", mode)
 	fmt.Fprintf(out, "keep_awake:%s\n", orDefault(cfg.KeepAwake, "auto"))
+	fmt.Fprintf(out, "auto_update:%s\n", orDefault(cfg.AutoUpdate, "auto"))
 	fmt.Fprintf(out, "token set: %v\n", cfg.Token != "")
 	if len(cfg.Allow) > 0 {
 		fmt.Fprintf(out, "allow:     %s\n", strings.Join(cfg.Allow, ", "))

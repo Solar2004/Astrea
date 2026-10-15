@@ -69,7 +69,7 @@ func registerGUIProxies(reg *capability.Registry, b *guibridge.Bridge) {
 // headless agent. It shares the agent's config (token, allow/deny) but has
 // no dynamic endpoints, services or audit log of its own: the headless agent
 // already checks and audits every call it forwards.
-func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *log.Logger) {
+func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *log.Logger, stop func()) {
 	host, _, err := net.SplitHostPort(addr)
 	if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
 		logger.Fatalf("--gui-addr %q must be a loopback address such as 127.0.0.1:7701: the helper is not meant to be reachable from the network", addr)
@@ -79,6 +79,7 @@ func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *
 		reg.Register(c)
 	}
 	reg.Register(capability.Exec{})
+	reg.Register(agentRestart{stop: stop})
 
 	guard := security.NewGuard(cfg.EffectiveAllow(), cfg.Deny)
 	srv := &transport.Server{Registry: reg, Auth: auth.New(cfg.Token), Guard: guard, Logger: logger}

@@ -338,7 +338,7 @@ function Write-AgentConfig([string]$ip) {
   $cfg = [ordered]@{ addr = "${ip}:$Port"; token = $token; data_dir = $InstallDir; mode = 'yolo'; keep_awake = 'auto' }
   if ($old) {
     # Respeta lo que el usuario haya cambiado a mano.
-    foreach ($k in 'mode', 'keep_awake', 'allow', 'deny') {
+    foreach ($k in 'mode', 'keep_awake', 'auto_update', 'allow', 'deny') {
       if ($null -ne $old.$k) { $cfg[$k] = $old.$k }
     }
   }
