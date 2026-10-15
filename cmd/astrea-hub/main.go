@@ -69,7 +69,7 @@ func main() {
 		Name:    "astrea",
 		Title:   "Astrea — remote machine control",
 		Version: version,
-	}, nil)
+	}, &mcp.ServerOptions{Instructions: serverInstructions})
 
 	h := newHub(server, fleet.New(machines), *prefix, *cacheDir, *callTimeout, logger)
 	h.loadCaches()
@@ -111,3 +111,11 @@ func defaultCacheDir() string {
 	}
 	return filepath.Join(os.TempDir(), "astrea")
 }
+
+// serverInstructions reach the AI when it connects.
+const serverInstructions = `Astrea controls the owner's machines. The owner watches what you do on each one as a task list.
+
+Every action that changes a machine (exec, fs.write, mouse/keyboard, jobs, services, tasks…) takes a "work" argument saying which task it belongs to:
+- {"title": "Generate 5 videos with MiniMax", "detail": "for the Instagram campaign"} opens a new task on that machine (closing the previous one);
+- "continue" means it is part of the task already open there.
+Report progress with work.update ("3/5") and close with work.end (done / failed / cancelled, plus a short summary of what was produced). Looking (fleet.status, sys.stats, screen.capture, fs.read…) needs no task.`

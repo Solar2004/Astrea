@@ -115,6 +115,7 @@ func main() {
 	mux.HandleFunc("/api/history", p.handleHistory)
 	mux.HandleFunc("/api/machines", p.handleMachines)
 	mux.HandleFunc("/api/audit", p.handleAudit)
+	mux.HandleFunc("/api/work", p.handleWork)
 	mux.HandleFunc("/api/service", p.handleService)
 	mux.HandleFunc("/api/service/logs", p.handleServiceLogs)
 

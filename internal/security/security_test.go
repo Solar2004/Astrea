@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -62,9 +63,9 @@ func TestReadAuditNewestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.Log("exec", json.RawMessage(`{"command":"ls"}`), nil)
-	a.Log("fs.read", nil, errors.New("boom"))
-	a.Log("sys.info", nil, nil)
+	a.Log(context.Background(), "exec", json.RawMessage(`{"command":"ls"}`), nil)
+	a.Log(context.Background(), "fs.read", nil, errors.New("boom"))
+	a.Log(context.Background(), "sys.info", nil, nil)
 	a.Close()
 	got, err := ReadAudit(path, 2)
 	if err != nil {

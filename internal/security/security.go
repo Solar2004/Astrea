@@ -7,6 +7,7 @@
 package security
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -115,6 +116,8 @@ type Entry struct {
 	Args   string `json:"args,omitempty"`
 	OK     bool   `json:"ok"`
 	Err    string `json:"err,omitempty"`
+	// Work is the declared task the call ran under (see package work).
+	Work string `json:"work,omitempty"`
 }
 
 // maxAuditArgs bounds the arguments recorded per entry (fs.write payloads can
@@ -122,11 +125,12 @@ type Entry struct {
 const maxAuditArgs = 2 << 10
 
 // Log records an invocation and its (truncated) arguments. No-op if a is nil.
-func (a *Audit) Log(method string, args json.RawMessage, err error) {
+// The declared task in ctx (protocol.WorkID), if any, is recorded with it.
+func (a *Audit) Log(ctx context.Context, method string, args json.RawMessage, err error) {
 	if a == nil {
 		return
 	}
-	e := Entry{Time: time.Now().UTC().Format(time.RFC3339), Method: method, OK: err == nil}
+	e := Entry{Time: time.Now().UTC().Format(time.RFC3339), Method: method, OK: err == nil, Work: protocol.WorkID(ctx)}
 	if s := string(args); s != "" && s != "null" && s != "{}" {
 		if len(s) > maxAuditArgs {
 			s = s[:maxAuditArgs] + "…"
@@ -153,6 +157,11 @@ func (a *Audit) Path() string {
 // ReadAudit returns the last limit entries of the audit log at path, newest
 // first. It reads at most the final 4 MiB, so a huge log stays cheap.
 func ReadAudit(path string, limit int) ([]Entry, error) {
+	return ReadAuditFunc(path, limit, nil)
+}
+
+// ReadAuditFunc is ReadAudit keeping only the entries keep accepts (all if nil).
+func ReadAuditFunc(path string, limit int, keep func(Entry) bool) ([]Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -172,7 +181,7 @@ func ReadAudit(path string, limit int) ([]Entry, error) {
 	var out []Entry
 	for i := len(lines) - 1; i >= 0 && len(out) < limit; i-- {
 		var e Entry
-		if json.Unmarshal([]byte(lines[i]), &e) == nil && e.Method != "" {
+		if json.Unmarshal([]byte(lines[i]), &e) == nil && e.Method != "" && (keep == nil || keep(e)) {
 			out = append(out, e)
 		}
 	}

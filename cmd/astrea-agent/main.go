@@ -33,6 +33,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/task"
 	"github.com/Solar2004/Astrea/internal/transport"
 	"github.com/Solar2004/Astrea/internal/update"
+	"github.com/Solar2004/Astrea/internal/work"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -178,6 +179,20 @@ func run() *log.Logger {
 	}
 	defer audit.Close()
 
+	// Declared work: what the AI says it is doing here, tagged on every action.
+	works := work.Open(filepath.Join(cfg.DataDir, "work.json"))
+	defer works.Flush()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(20 * time.Second):
+				works.Flush()
+			}
+		}
+	}()
+
 	// Dynamic endpoints, persisted so they survive restarts.
 	dyn := endpoint.NewManager(filepath.Join(cfg.DataDir, "endpoints.json"))
 
@@ -211,11 +226,11 @@ func run() *log.Logger {
 	tasks := task.NewManager(cfg.DataDir)
 	tasks.SetDispatch(func(ctx context.Context, method string, payload json.RawMessage, emit task.Emit) (any, error) {
 		if err := guard.Check(method); err != nil {
-			audit.Log(method, payload, err)
+			audit.Log(ctx, method, payload, err)
 			return nil, err
 		}
 		res, err := reg.Dispatch(ctx, method, payload, capability.Emit(emit))
-		audit.Log(method, payload, err)
+		audit.Log(ctx, method, payload, err)
 		return res, err
 	})
 	capability.RegisterTasks(reg, tasks)
@@ -224,7 +239,7 @@ func run() *log.Logger {
 			return nil, err
 		}
 		res, err := tasks.Run(ctx, name, args, emit)
-		audit.Log("dyn:task."+name, args, err)
+		audit.Log(ctx, "dyn:task."+name, args, err)
 		return res, err
 	}
 	// Dependencies: detect and install git, python, CUDA, ….
@@ -294,7 +309,14 @@ func run() *log.Logger {
 	go upd.loop(ctx)
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
-	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode, Extra: upd.status})
+	capability.RegisterWork(reg, works, audit.Path())
+	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode, Extra: func() map[string]any {
+		m := upd.status()
+		if t, ok := works.Current(); ok {
+			m["work"] = t
+		}
+		return m
+	}})
 	reg.Register(capability.AdminStop{Stop: stop})
 	reg.Register(capability.AdminAudit{Path: audit.Path()})
 
@@ -303,7 +325,7 @@ func run() *log.Logger {
 		logger.Println("WARNING: no token set — control channel is UNAUTHENTICATED. Set a token in config or --token.")
 	}
 
-	srv := &transport.Server{Registry: reg, Auth: tok, Guard: guard, Audit: audit, Dyn: dyn, Logger: logger}
+	srv := &transport.Server{Registry: reg, Auth: tok, Guard: guard, Audit: audit, Work: works, Dyn: dyn, Logger: logger}
 	httpSrv := &http.Server{Addr: cfg.Addr, Handler: srv.Handler()}
 
 	go func() {

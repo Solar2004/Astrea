@@ -14,6 +14,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/capability"
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
+	"github.com/Solar2004/Astrea/internal/work"
 	"github.com/coder/websocket"
 )
 
@@ -23,6 +24,8 @@ type Server struct {
 	Auth     *auth.Token
 	Guard    *security.Guard
 	Audit    *security.Audit
+	// Work, if set, resolves the task a request declares (Frame.Work).
+	Work *work.Store
 	// Dyn, if set, serves dynamic endpoints mounted under /dyn/.
 	Dyn    http.Handler
 	Logger *log.Logger
@@ -124,13 +127,29 @@ func (c *conn) handle(ctx context.Context, f protocol.Frame) {
 	// Authorization guard (allow/deny lists + kill switch) runs before dispatch.
 	if c.srv.Guard != nil {
 		if err := c.srv.Guard.Check(f.Method); err != nil {
-			c.srv.Audit.Log(f.Method, f.Payload, err)
+			c.srv.Audit.Log(ctx, f.Method, f.Payload, err)
 			c.send(protocol.Frame{Type: protocol.FrameError, ID: f.ID, Error: err.(*protocol.Error)})
 			return
 		}
 	}
+	// Declared work: continue the current task or open a new one.
+	var workID string
+	if len(f.Work) > 0 && string(f.Work) != "null" && c.srv.Work != nil {
+		t, err := resolveWork(c.srv.Work, f.Work)
+		if err != nil {
+			pe := &protocol.Error{Code: protocol.CodeBadRequest, Message: err.Error()}
+			c.srv.Audit.Log(ctx, f.Method, f.Payload, pe)
+			c.send(protocol.Frame{Type: protocol.FrameError, ID: f.ID, Error: pe})
+			return
+		}
+		workID = t.ID
+		ctx = protocol.WithWorkID(ctx, workID)
+	}
 	result, err := c.srv.Registry.Dispatch(ctx, f.Method, f.Payload, emit)
-	c.srv.Audit.Log(f.Method, f.Payload, err)
+	c.srv.Audit.Log(ctx, f.Method, f.Payload, err)
+	if workID != "" {
+		c.srv.Work.Count(workID, err != nil)
+	}
 	if err != nil {
 		pe, ok := err.(*protocol.Error)
 		if !ok {
@@ -157,4 +176,13 @@ func (c *conn) send(f protocol.Frame) {
 	if err := c.ws.Write(c.ctx, websocket.MessageText, data); err != nil && c.srv.Logger != nil {
 		c.srv.Logger.Printf("write: %v", err)
 	}
+}
+
+func resolveWork(s *work.Store, raw json.RawMessage) (work.Task, error) {
+	spec, err := work.ParseSpec(raw)
+	if err != nil {
+		return work.Task{}, err
+	}
+	t, _, err := s.Resolve(spec)
+	return t, err
 }

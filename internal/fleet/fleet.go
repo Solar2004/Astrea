@@ -201,6 +201,16 @@ type Status struct {
 	Version         string `json:"version,omitempty"`
 	LatestVersion   string `json:"latest_version,omitempty"`
 	UpdateAvailable bool   `json:"update_available,omitempty"`
+	// Work is the task currently declared on the machine (agents v0.4.0+).
+	Work *Work `json:"work,omitempty"`
+}
+
+// Work summarizes a machine's current declared task.
+type Work struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Progress string `json:"progress,omitempty"`
+	Started  string `json:"started"`
 }
 
 // StatusAll snapshots every node in parallel. Offline nodes are reported, not
@@ -228,11 +238,13 @@ func (n *Node) Status(ctx context.Context) Status {
 		Version         string `json:"version"`
 		LatestVersion   string `json:"latest_version"`
 		UpdateAvailable bool   `json:"update_available"`
+		Work            *Work  `json:"work"`
 	}
 	if err := n.Call(ctx, "admin.status", &admin); err != nil {
 		st.Error = err.Error()
 		return st
 	}
+	st.Work = admin.Work
 	st.Online, st.OS, st.Mode, st.Locked = true, admin.OS, admin.Mode, admin.Locked
 	st.Version, st.LatestVersion, st.UpdateAvailable = admin.Version, admin.LatestVersion, admin.UpdateAvailable
 

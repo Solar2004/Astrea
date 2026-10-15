@@ -162,7 +162,7 @@ func (c *Client) Call(ctx context.Context, method string, payload any) (*CallRes
 		c.mu.Unlock()
 	}
 
-	frame := protocol.Frame{Type: protocol.FrameRequest, ID: id, Method: method, Payload: raw}
+	frame := protocol.Frame{Type: protocol.FrameRequest, ID: id, Method: method, Payload: raw, Work: protocol.WorkSpec(ctx)}
 	data, _ := json.Marshal(frame)
 	if err := c.ws.Write(ctx, websocket.MessageText, data); err != nil {
 		forget()

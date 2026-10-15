@@ -58,22 +58,44 @@ func TestRoute(t *testing.T) {
 	h.apply()
 
 	// Shared cap without machine -> error listing owners.
-	if _, _, err := h.route("exec", json.RawMessage(`{}`)); err == nil {
+	if _, _, _, err := h.route("exec", json.RawMessage(`{"work":"continue"}`)); err == nil {
 		t.Fatal("exec on two machines needs an explicit machine")
 	}
-	// Explicit machine, and the machine arg is stripped from forwarded args.
-	n, args, err := h.route("exec", json.RawMessage(`{"machine":"b","command":"echo hi"}`))
-	if err != nil || n.Name != "b" || contains(string(args), "machine") {
-		t.Fatalf("route exec@b: %v %s %s", err, n.Name, args)
+	// Explicit machine; machine and work are stripped from forwarded args.
+	n, args, spec, err := h.route("exec", json.RawMessage(`{"machine":"b","command":"echo hi","work":{"title":"t"}}`))
+	if err != nil || n.Name != "b" || contains(string(args), "machine") || contains(string(args), "work") || string(spec) != `{"title":"t"}` {
+		t.Fatalf("route exec@b: %v %s %s %s", err, n.Name, args, spec)
 	}
 	// Cap owned by one machine: routed without an explicit machine.
-	n, _, err = h.route("task.hora", json.RawMessage(`{}`))
+	n, _, _, err = h.route("task.hora", json.RawMessage(`{"work":"continue"}`))
 	if err != nil || n.Name != "a" {
 		t.Fatalf("task.hora should route to its only owner a: %v", err)
 	}
 	// Unknown machine.
-	if _, _, err := h.route("exec", json.RawMessage(`{"machine":"z"}`)); err == nil {
+	if _, _, _, err := h.route("exec", json.RawMessage(`{"machine":"z","work":"continue"}`)); err == nil {
 		t.Fatal("unknown machine should fail")
+	}
+}
+
+func TestWorkRequired(t *testing.T) {
+	h := testHub(t, "a")
+	// A mutating call must declare its task.
+	if _, _, _, err := h.route("exec", json.RawMessage(`{"command":"ls"}`)); err == nil || !contains(err.Error(), "work") {
+		t.Fatalf("exec without work should fail: %v", err)
+	}
+	// Looking needs none, and a stray work is not forwarded.
+	if _, _, spec, err := h.route("sys.stats", json.RawMessage(`{"work":"continue"}`)); err != nil || spec != nil {
+		t.Fatalf("sys.stats: %v %s", err, spec)
+	}
+	for _, c := range []string{"work.start", "admin.lock", "agent.update", "screen.capture"} {
+		if needsWork(c) {
+			t.Errorf("%s should not need work", c)
+		}
+	}
+	var s map[string]any
+	_ = json.Unmarshal(withWorkParam(json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}`)), &s)
+	if req, _ := s["required"].([]any); len(req) != 2 || req[1] != "work" {
+		t.Fatalf("work should be required: %v", s["required"])
 	}
 }
 

@@ -45,7 +45,7 @@ func newHub(server *mcp.Server, f *fleet.Fleet, prefix, cacheDir string, callTim
 	server.AddTool(&mcp.Tool{
 		Name: prefix + fleetStatusTool,
 		Description: "Snapshot of every controlled machine: online, OS, CPU/RAM use, GPUs with free VRAM, " +
-			"whether a user is active (and the foreground app, e.g. a game), and supervised services. " +
+			"whether a user is active (and the foreground app, e.g. a game), supervised services, and the task the AI has declared on it (work). " +
 			"Use it to choose which machine should run a job or a model.",
 		InputSchema: json.RawMessage(`{"type": "object", "properties": {}}`),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -138,6 +138,9 @@ func (h *hub) apply() {
 	for capName, c := range desc {
 		machines := owner[capName]
 		schema := withMachineParam(c.InputSchema, machines, multi)
+		if needsWork(capName) {
+			schema = withWorkParam(schema)
+		}
 		description := c.Description
 		if multi {
 			description += " Machines: " + strings.Join(machines, ", ") + "."
@@ -197,14 +200,80 @@ func withMachineParam(schema json.RawMessage, machines []string, multi bool) jso
 	return out
 }
 
+// readOnly are the capabilities that only look: they need no declared work.
+var readOnly = map[string]bool{
+	"admin.audit": true, "admin.status": true, "deps.check": true, "endpoint.list": true,
+	"fs.list": true, "fs.read": true, "job.logs": true, "job.status": true,
+	"net.download.status": true, "proc.list": true, "screen.capture": true,
+	"service.logs": true, "service.status": true, "sys.idle": true, "sys.info": true,
+	"sys.stats": true, "task.get": true, "task.list": true,
+}
+
+// needsWork reports whether calling capName must say which task it is part
+// of. Everything that changes the machine does, except declaring work itself
+// and the owner's controls (kill switch, updates).
+func needsWork(capName string) bool {
+	switch {
+	case readOnly[capName], strings.HasPrefix(capName, "work."),
+		strings.HasPrefix(capName, "admin."), strings.HasPrefix(capName, "agent."):
+		return false
+	}
+	return true
+}
+
+const workParamDesc = `Which task this action is part of — shown to the machine's owner and kept in the audit. ` +
+	`"continue" if it belongs to the task already open on this machine; ` +
+	`for something new: {"title": "what, in a few words", "detail": "why / for what"} (closes the previous task). ` +
+	`Report progress with work.update and close with work.end.`
+
+// withWorkParam adds the required "work" argument to a capability's schema.
+func withWorkParam(schema json.RawMessage) json.RawMessage {
+	var s map[string]any
+	if len(schema) == 0 || json.Unmarshal(schema, &s) != nil {
+		s = map[string]any{"type": "object"}
+	}
+	props, _ := s["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+	}
+	props["work"] = map[string]any{
+		"description": workParamDesc,
+		"anyOf": []any{
+			map[string]any{"type": "string", "enum": []string{"continue"}},
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"title":  map[string]any{"type": "string"},
+					"detail": map[string]any{"type": "string"},
+				},
+				"required": []string{"title"},
+			},
+		},
+	}
+	s["properties"] = props
+	req, _ := s["required"].([]any)
+	s["required"] = append(req, "work")
+	out, err := json.Marshal(s)
+	if err != nil {
+		return schema
+	}
+	return out
+}
+
 // route extracts the "machine" argument, returning the target node and the
 // arguments to forward (raw values untouched, so integers stay integers).
-func (h *hub) route(capName string, raw json.RawMessage) (*fleet.Node, json.RawMessage, error) {
+// The "work" argument is removed too and returned apart.
+func (h *hub) route(capName string, raw json.RawMessage) (*fleet.Node, json.RawMessage, json.RawMessage, error) {
 	args := map[string]json.RawMessage{}
 	if len(raw) > 0 && string(raw) != "null" {
 		if err := json.Unmarshal(raw, &args); err != nil {
-			return nil, nil, fmt.Errorf("arguments must be a JSON object: %v", err)
+			return nil, nil, nil, fmt.Errorf("arguments must be a JSON object: %v", err)
 		}
+	}
+	workSpec := args["work"]
+	delete(args, "work")
+	if needsWork(capName) && (len(workSpec) == 0 || string(workSpec) == "null") {
+		return nil, nil, nil, fmt.Errorf(`missing "work": say which task this is part of — "continue" for the task already open on that machine, or {"title": "...", "detail": "..."} for a new one`)
 	}
 	var machine string
 	if m, ok := args["machine"]; ok {
@@ -221,22 +290,28 @@ func (h *hub) route(capName string, raw json.RawMessage) (*fleet.Node, json.RawM
 	case len(owners) == 1:
 		machine = owners[0]
 	default:
-		return nil, nil, fmt.Errorf("pass machine: one of %v (see %s%s)", owners, h.prefix, fleetStatusTool)
+		return nil, nil, nil, fmt.Errorf("pass machine: one of %v (see %s%s)", owners, h.prefix, fleetStatusTool)
 	}
 	n := h.fleet.Get(machine)
 	if n == nil {
-		return nil, nil, fmt.Errorf("unknown machine %q (known: %v)", machine, h.fleet.Names())
+		return nil, nil, nil, fmt.Errorf("unknown machine %q (known: %v)", machine, h.fleet.Names())
 	}
 	fwd, err := json.Marshal(args)
-	return n, fwd, err
+	if !needsWork(capName) {
+		workSpec = nil
+	}
+	return n, fwd, workSpec, err
 }
 
 // handler forwards a tool call to the chosen machine and renders the result.
 func (h *hub) handler(capName string) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		n, args, err := h.route(capName, json.RawMessage(req.Params.Arguments))
+		n, args, workSpec, err := h.route(capName, json.RawMessage(req.Params.Arguments))
 		if err != nil {
 			return errorResult(err), nil
+		}
+		if workSpec != nil {
+			ctx = protocol.WithWorkSpec(ctx, workSpec)
 		}
 		callCtx, cancel := context.WithTimeout(ctx, h.timeoutFor(args))
 		defer cancel()

@@ -240,6 +240,7 @@ func (b *telegramBot) setCommands() {
 		{"command": "flota", "description": "Estado de todos los equipos"},
 		{"command": "equipo", "description": "Detalle de un equipo: /equipo NOMBRE"},
 		{"command": "pantalla", "description": "Ver la pantalla: /pantalla NOMBRE"},
+		{"command": "tareas", "description": "Qué está haciendo la IA y qué hizo (o /tareas NOMBRE)"},
 		{"command": "actividad", "description": "Lo último que hizo la IA: /actividad NOMBRE"},
 		{"command": "frenar", "description": "Freno de emergencia de la IA: /frenar NOMBRE"},
 		{"command": "liberar", "description": "Quitar el freno: /liberar NOMBRE"},
@@ -463,10 +464,13 @@ func (b *telegramBot) machineView(name string) (view, error) {
 		case "readonly":
 			caption += "\n👁 Solo lectura · la IA puede mirar, no cambiar nada"
 		}
+		if t, ok := currentWork(s); ok {
+			caption += "\n📋 " + workLine(t, false)
+		}
 		rows = [][]map[string]string{
 			{btn("🖥 Pantalla", "p:"+n), btn("🔄 Actualizar", "m:"+n)},
-			{btn("⚙️ Servicios", "s:"+n), btn("📜 Actividad", "a:"+n)},
-			{lock},
+			{btn("📋 Tareas", "t:"+n), btn("📜 Actividad", "a:"+n)},
+			{btn("⚙️ Servicios", "s:"+n), lock},
 		}
 	}
 	rows = append(rows, []map[string]string{btn("← Flota", "f")})
@@ -729,6 +733,10 @@ func (b *telegramBot) handle(chatID int64, username, text string) {
 		b.withMachine(chatID, arg, "p")
 	case cmd == "/actividad":
 		b.withMachine(chatID, arg, "a")
+	case cmd == "/tareas" && arg == "":
+		b.send(chatID, b.fleetWorkText(), nil)
+	case cmd == "/tareas":
+		b.withMachine(chatID, arg, "t")
 	case cmd == "/frenar":
 		b.withMachine(chatID, arg, "l")
 	case cmd == "/liberar":
@@ -739,6 +747,7 @@ func (b *telegramBot) handle(chatID int64, username, text string) {
 		b.send(chatID, "Hola 👋 Soy el panel de Astrea en tu bolsillo.\n\n"+
 			"• <b>📊 Flota</b>: cómo están todos los equipos; toca uno para ver su detalle\n"+
 			"• <code>/pantalla NOMBRE</code>: ver su pantalla\n"+
+			"• <code>/tareas</code>: qué está haciendo la IA en cada equipo y qué hizo\n"+
 			"• <code>/actividad NOMBRE</code>: lo último que hizo la IA\n"+
 			"• <code>/frenar NOMBRE</code>: freno de emergencia de la IA\n"+
 			"• <code>/avisos</code>: silenciar o activar los avisos\n\n"+
@@ -803,6 +812,9 @@ func (b *telegramBot) dispatch(chatID int64, msgID int, kind, name string) {
 		b.showCaption(chatID, msgID, name, caption, markup)
 	case "a":
 		caption, markup := b.activityCaption(name)
+		b.showCaption(chatID, msgID, name, caption, markup)
+	case "t":
+		caption, markup := b.workCaption(name)
 		b.showCaption(chatID, msgID, name, caption, markup)
 	case "l":
 		b.showCaption(chatID, msgID, name,
@@ -939,6 +951,7 @@ type machineWatch struct {
 	locked   bool
 	ramSince time.Time         // desde cuándo la RAM está ≥ 95 %
 	services map[string]string // último estado de cada servicio
+	work     string            // tarea en curso (id)
 }
 
 const alertCooldown = 30 * time.Minute
@@ -958,6 +971,7 @@ func (b *telegramBot) watch() {
 		type alert struct {
 			text, machine string
 			always        bool
+			kind          string // botón: "m" (equipo, por defecto) o "t" (tareas)
 		}
 		var alerts []alert
 		threshold := func(name, metric, text string) {
@@ -976,6 +990,9 @@ func (b *telegramBot) watch() {
 			w := state[name]
 			if w == nil {
 				w = &machineWatch{online: s.Online, since: now, locked: c.Locked, services: map[string]string{}}
+				if t, ok := currentWork(s); ok {
+					w.work = t.ID
+				}
 				state[name] = w
 				b.fillServices(w, s, nil)
 				continue // primera vez que lo vemos: sin aviso
@@ -1011,6 +1028,14 @@ func (b *telegramBot) watch() {
 				}
 				w.locked = c.Locked
 			}
+			// Tareas: avisa cuando termina la que estaba en curso.
+			cur, _ := currentWork(s)
+			if w.work != "" && cur.ID != w.work {
+				if t, ok := b.finishedWork(name, w.work); ok {
+					alerts = append(alerts, alert{text: t, machine: name, kind: "t"})
+				}
+			}
+			w.work = cur.ID
 			// Umbrales.
 			if c.Stats != nil {
 				for _, g := range c.Stats.GPUs {
@@ -1052,7 +1077,11 @@ func (b *telegramBot) watch() {
 		}
 		for _, a := range alerts {
 			if a.always || b.alertsOn() {
-				b.notify(a.text, inline([]map[string]string{btn("Ver equipo", "m:"+a.machine)}))
+				button := btn("Ver equipo", "m:"+a.machine)
+				if a.kind == "t" {
+					button = btn("📋 Ver tareas", "t:"+a.machine)
+				}
+				b.notify(a.text, inline([]map[string]string{button}))
 			}
 		}
 	}

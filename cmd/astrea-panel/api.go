@@ -101,6 +101,7 @@ func (p *panel) handleAudit(w http.ResponseWriter, r *http.Request) {
 			Args   string `json:"args"`
 			OK     bool   `json:"ok"`
 			Err    string `json:"err"`
+			Work   string `json:"work"`
 		} `json:"entries"`
 	}
 	if code, err := p.call(r.Context(), q.Get("machine"), "admin.audit", map[string]any{"limit": limit}, &res, 10*time.Second); err != nil {
@@ -112,6 +113,9 @@ func (p *panel) handleAudit(w http.ResponseWriter, r *http.Request) {
 		item := map[string]any{"ts": e.Time, "method": e.Method, "ok": e.OK, "summary": auditSummary(e.Method, e.Args)}
 		if e.Err != "" {
 			item["error"] = e.Err
+		}
+		if e.Work != "" {
+			item["work"] = e.Work
 		}
 		out = append(out, item)
 	}

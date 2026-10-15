@@ -8,7 +8,10 @@
 // Stream frames carrying incremental output (e.g. live stdout from exec).
 package protocol
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 // FrameType discriminates the Frame.Type field.
 type FrameType string
@@ -43,6 +46,11 @@ type Frame struct {
 	Stream *StreamChunk `json:"stream,omitempty"`
 	// Error describes a terminal failure (error frames only).
 	Error *Error `json:"error,omitempty"`
+	// Work says which piece of declared work a request belongs to (requests
+	// from the hub only): "continue" for the machine's current task, or an
+	// object {"title", "detail"} that opens a new one. Agents older than
+	// v0.4.0 ignore it.
+	Work json.RawMessage `json:"work,omitempty"`
 }
 
 // StreamChunk is one incremental piece of output for a streaming method.
@@ -74,3 +82,32 @@ const (
 	// screen/mouse/keyboard while nobody is logged in.
 	CodeUnavailable = "unavailable"
 )
+
+type ctxKey int
+
+const (
+	workSpecKey ctxKey = iota
+	workIDKey
+)
+
+// WithWorkSpec makes calls under ctx carry spec as their Frame.Work (hub side).
+func WithWorkSpec(ctx context.Context, spec json.RawMessage) context.Context {
+	return context.WithValue(ctx, workSpecKey, spec)
+}
+
+// WorkSpec is the spec set by WithWorkSpec, or nil.
+func WorkSpec(ctx context.Context) json.RawMessage {
+	s, _ := ctx.Value(workSpecKey).(json.RawMessage)
+	return s
+}
+
+// WithWorkID records, agent side, the declared task a request runs under.
+func WithWorkID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, workIDKey, id)
+}
+
+// WorkID is the task set by WithWorkID, or "".
+func WorkID(ctx context.Context) string {
+	s, _ := ctx.Value(workIDKey).(string)
+	return s
+}

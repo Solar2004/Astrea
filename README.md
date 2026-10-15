@@ -131,6 +131,7 @@ make test       # tests
 | `astrea.power.awake/wake/action` | No suspender mientras sirve modelos, Wake-on-LAN, bloquear/reiniciar/apagar |
 | `astrea.task.define/list/get/delete/run` | Automatizaciones creadas por la IA; cada una es su propia tool `astrea.task.<name>` |
 | `astrea.endpoint.create/list/delete` | APIs HTTP dinámicas en `/dyn/<name>` (exec/proxy/static/task) |
+| `astrea.work.start/update/end/list/get` | La IA declara qué está haciendo en cada PC; lista de tareas con sus acciones (auditoría) |
 | `astrea.admin.lock/status/stop` | Kill switch y control del agente                 |
 | `astrea.agent.update/restart` | Actualizar el agente a la última release (verificada) y reiniciarlo |
 | `astrea.fleet.status` | (hub) Resumen de todas las PCs: online, CPU/RAM, GPUs con VRAM libre, quién está activo, servicios |
@@ -161,6 +162,24 @@ aparece como una tool nueva (`astrea.task.<name>`), sin reiniciar nada. Dos tipo
   pantalla").
 
 Persisten entre reinicios. Ejemplos completos en [`docs/TASKS.md`](docs/TASKS.md).
+
+### Tareas de la IA — qué está haciendo y qué hizo
+
+Toda acción que cambia algo en una PC (exec, archivos, ratón/teclado, jobs,
+servicios…) lleva un argumento `work` que dice a qué tarea pertenece:
+
+- `{"title": "Generar 5 vídeos con MiniMax", "detail": "para la campaña"}` abre
+  una tarea nueva en esa PC (y cierra la anterior);
+- `"continue"`: es parte de la tarea que ya está abierta allí.
+
+Sin `work` el hub no la deja pasar. Mirar (estadísticas, pantalla, leer
+archivos) no necesita tarea. La IA informa del avance con `work.update`
+("3/5") y cierra con `work.end` (terminada / falló / cancelada + resumen).
+
+Cada acción queda en la auditoría con el id de su tarea, así que lo que ves es
+lo que **se hizo**, no lo que la IA dice que hizo. Se ve en el panel, en
+`fleet.status` y en Telegram (`/tareas`, la tarjeta de cada PC y un aviso al
+terminar o fallar). API del panel: `GET /api/work[?machine=&id=]`.
 
 ## Varias PCs — una flota
 
