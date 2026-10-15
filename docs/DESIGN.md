@@ -109,7 +109,9 @@ en el móvil.
 | Endpoint | Dónde en la UI |
 |---|---|
 | `GET /api/stats` (incl. `admin.*`, `last_seen`) | Todo; “Vista por última vez” |
-| `GET /api/screenshot?machine=` | Botón *Ver pantalla* (interruptor *En vivo*: cada 3 s) |
+| `GET /api/live?machine=&w=` (MJPEG en un `<img>`) | Botón *Ver pantalla*: vídeo en vivo; calidad Rápida/Normal/Nítida = `w` 960/1280/1920; quitar el `src` corta el stream. Si el `<img>` falla, un `fetch` lee el estado: 502 sin sesión → “Nadie ha iniciado sesión”, sin conexión → “El equipo no responde”, 501 → “actualízalo” |
+| `POST /api/control {machine,on}` (+ `renew` cada 10 s) | *🕹 Tomar el control* / *Soltar el control*. Con control: anillo ámbar alrededor de la ventana y franja “Tienes el control — la IA no puede usar ratón ni teclado” con teclas rápidas (Esc, Tab, Enter, Alt+Tab, Win, Ctrl+C, Ctrl+V). Se suelta al cerrar, al salir de la página (`keepalive`) o si falla un latido. Con control, Esc va al equipo y solo la ✕ cierra |
+| `POST /api/input` | Clic (izq./der./medio), arrastre (down → move ≤10/s → up, umbral 5 px), rueda en muescas (100 px = 1), texto en ráfagas de 250 ms, combinaciones como `ctrl+c` (AltGr cuenta como texto). Se envían en orden, uno tras otro |
 | `GET /api/version`, `POST /api/update?machine=NOMBRE\|all\|hub` | Avisos del Resumen, botón *Actualizar agente* |
 | `POST /api/lock?machine=&locked=` | *Frenar IA* (cabecera), aviso rojo y *Sistema › Freno de emergencia* |
 | `POST /api/machines`, `DELETE /api/machines?name=` | *Añadir un equipo* (paso 3: pegar ficha) y *Sistema › Quitar del panel* |
@@ -129,7 +131,6 @@ La pestaña *Actividad* oculta por defecto las consultas que hace el propio pane
 
 ### Pendiente
 
-- **Pantalla en vivo de verdad**: `GET /api/screen/stream?machine=` (MJPEG). Hoy es polling.
 
 ## Bot de Telegram
 

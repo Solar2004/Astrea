@@ -284,6 +284,18 @@
   .sheet .body.real { display: block; max-width: 96vw; max-height: calc(94vh - 64px); }
   .sheet .body.real img { max-width: none; max-height: none; cursor: zoom-out; }
   .sheet .msg { color: var(--text-2); padding: 40px; text-align: center; }
+  .sheet .msg .btn { margin-top: 14px; }
+  .sheet .body:focus { outline: none; }
+  .live-dot { display: inline-flex; align-items: center; gap: 6px; }
+  /* Taking control: an amber ring around the whole window, so it's never ambiguous who drives the mouse */
+  .sheet.ctl { box-shadow: 0 0 0 3px var(--warn), var(--shadow-lg); }
+  .sheet.ctl img { cursor: default; touch-action: none; max-height: calc(94vh - 140px); }
+  .ctl-bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 14px 8px 20px; font-size: 13px;
+             background: color-mix(in srgb, var(--warn) 14%, var(--surface)); border-bottom: 1px solid var(--divider); }
+  .ctl-bar[hidden] { display: none; }
+  .ctl-bar b { color: color-mix(in srgb, var(--warn) 65%, var(--text)); }
+  .ctl-bar .keys { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+  .ctl-bar .keys .btn { height: 26px; padding: 0 9px; font-size: 12px; background: var(--surface); }
   .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
   .toggle input { appearance: none; width: 36px; height: 22px; border-radius: 999px; background: var(--surface-3); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
   .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
@@ -454,12 +466,18 @@
     <div class="bar">
       <div><h3 id="shotTitle">Pantalla</h3><small id="shotWhen"></small></div>
       <span class="spacer"></span>
-      <label class="toggle"><input type="checkbox" id="shotAuto">En vivo</label>
+      <select class="input sel" id="shotQ" aria-label="Calidad de imagen" title="Calidad de imagen">
+        <option value="960">Rápida</option><option value="1280" selected>Normal</option><option value="1920">Nítida</option>
+      </select>
       <button class="btn sm ghost" id="shotFit">Tamaño real</button>
-      <button class="btn sm" id="shotReload"><svg class="icon"><use href="#i-refresh"/></svg>Actualizar</button>
+      <button class="btn sm primary" id="shotCtl"></button>
       <button class="btn sm ghost icon-only" id="shotClose" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <div class="body" id="shotBody"></div>
+    <div class="ctl-bar" id="shotCtlBar" hidden>
+      <span>🕹 <b>Tienes el control</b> — la IA no puede usar ratón ni teclado. Haz clic en la imagen y escribe.</span>
+      <span class="keys" id="shotKeys"></span>
+    </div>
+    <div class="body" id="shotBody" tabindex="-1"></div>
   </div>
 </div>
 <div class="sheet-bg" id="logs" role="dialog" aria-modal="true" aria-labelledby="logsTitle">
@@ -1552,49 +1570,204 @@ function draw() {
     : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
 }
 
-/* ---------- screen viewer ---------- */
-const shot = document.getElementById("shot");
-let shotMachine = "", shotTimer = 0, shotLoading = false;
+/* ---------- live window ---------- */
+// GET /api/live is an MJPEG stream: an <img> plays it, removing its src stops it.
+// Taking control (POST /api/control, renewed every 10 s, expires by itself at 30 s) locks the AI
+// out of mouse and keyboard; meanwhile clicks, drags, wheel and keys go to POST /api/input.
+const shot = document.getElementById("shot"), shotBody = document.getElementById("shotBody");
+const live = { machine: "", title: "", img: null, ctl: false, busy: false, renew: 0, chain: Promise.resolve(),
+               drag: null, move: null, moveTimer: 0, text: "", textTimer: 0, wheel: 0, wheelTimer: 0, lastErr: 0 };
+const BTN = ["left", "middle", "right"];
+const QUICK_KEYS = [["Esc", "esc"], ["Tab", "tab"], ["Enter", "enter"], ["Alt+Tab", "alt+tab"], ["Win", "win"], ["Ctrl+C", "ctrl+c"], ["Ctrl+V", "ctrl+v"]];
+const liveURL = () => "/api/live?" + q({ machine: live.machine, w: document.getElementById("shotQ").value });
+const setWhen = (...k) => document.getElementById("shotWhen").replaceChildren(...k);
+
 function showShot(machine, title) {
-  shotMachine = machine;
+  Object.assign(live, { machine, title });
   document.getElementById("shotTitle").textContent = title;
-  document.getElementById("shotWhen").textContent = "";
-  document.getElementById("shotBody").replaceChildren($("div", { class: "msg" }, "Capturando la pantalla…"));
   shot.classList.add("open");
+  drawCtl();
+  startStream();
   document.getElementById("shotClose").focus();
-  loadShot();
 }
 function closeShot() {
+  if (!shot.classList.contains("open")) return;
+  if (live.ctl) setControl(false);
+  stopStream();
   shot.classList.remove("open");
-  document.getElementById("shotBody").classList.remove("real");
+  shotBody.classList.remove("real");
   document.getElementById("shotFit").textContent = "Tamaño real";
-  document.getElementById("shotAuto").checked = false;
-  clearTimeout(shotTimer);
 }
-function loadShot() {
-  if (shotLoading) return;
-  shotLoading = true;
-  const body = document.getElementById("shotBody");
+
+function startStream() {
+  stopStream();
   const img = new Image();
-  img.alt = "Pantalla de " + document.getElementById("shotTitle").textContent;
-  const done = () => {
-    shotLoading = false;
-    if (document.getElementById("shotAuto").checked && shot.classList.contains("open")) shotTimer = setTimeout(loadShot, 3000);
-  };
-  img.onclick = toggleFit;
-  img.onload = () => { body.replaceChildren(img); document.getElementById("shotWhen").textContent = "Captura de las " + hhmmss(Date.now()); done(); };
-  img.onerror = () => { body.replaceChildren($("div", { class: "msg" }, $("b", {}, "No se pudo ver la pantalla"), $("br"), "Puede que nadie haya iniciado sesión en ese equipo.")); done(); };
-  img.src = "/api/screenshot?machine=" + encodeURIComponent(shotMachine) + "&t=" + Date.now();
+  img.alt = "Pantalla de " + live.title;
+  img.draggable = false;
+  img.style.display = "none";
+  img.onload = () => { img.style.display = ""; shotBody.querySelector(".msg")?.remove();
+    setWhen($("span", { class: "live-dot" }, $("span", { class: "dot t-bad pulse" }), "En vivo")); };
+  img.onerror = () => diagnose();
+  wireInput(img);
+  live.img = img;
+  shotBody.replaceChildren($("div", { class: "msg" }, "Conectando con la pantalla…"), img);
+  setWhen("");
+  img.src = liveURL();
 }
+function stopStream() {
+  const img = live.img;
+  if (!img) return;
+  img.onload = img.onerror = null;
+  img.removeAttribute("src"); // closes the stream
+  live.img = null;
+}
+// diagnose: an <img> can't see the HTTP status, so ask once with fetch and drop the body.
+async function diagnose() {
+  stopStream();
+  setWhen("Sin imagen");
+  shotBody.replaceChildren($("div", { class: "msg" }, "Comprobando qué pasa…"));
+  const ac = new AbortController();
+  let title = "No se pudo ver la pantalla", detail = "";
+  try {
+    const r = await fetch(liveURL(), { signal: ac.signal, cache: "no-store" });
+    if (r.ok) { ac.abort(); shotBody.replaceChildren($("div", { class: "msg" }, "Reconectando…")); setTimeout(() => shot.classList.contains("open") && !live.img && startStream(), 1500); return; }
+    const t = (await r.text()).trim();
+    if (r.status === 501) title = "El agente de este equipo no puede mostrar la pantalla: actualízalo";
+    else if (r.status === 502 && /sesi[oó]n|session|sin imagen/i.test(t)) { title = "Nadie ha iniciado sesión"; detail = "Sin una sesión abierta en ese equipo no hay pantalla que mostrar."; }
+    else if (/dial|deadline|timeout|unreachable|refused/i.test(t)) { title = "El equipo no responde"; detail = "Puede que se haya apagado o perdido la conexión."; }
+    else detail = t;
+  } catch (e) { if (e.name !== "AbortError") detail = e.message; }
+  shotBody.replaceChildren($("div", { class: "msg" }, $("b", {}, title), detail ? [$("br"), detail] : null, $("br"),
+    $("button", { class: "btn sm", onclick: startStream }, icon("refresh"), "Reintentar")));
+}
+
+/* control */
+function drawCtl() {
+  const b = document.getElementById("shotCtl");
+  b.disabled = live.busy;
+  b.className = "btn sm " + (live.ctl ? "" : "primary");
+  b.replaceChildren(...(live.busy ? [icon("refresh", "spin")] : []), live.ctl ? "Soltar el control" : "🕹 Tomar el control");
+  document.getElementById("shotCtlBar").hidden = !live.ctl;
+  shot.querySelector(".sheet").classList.toggle("ctl", live.ctl);
+}
+const ctlErr = e => e.status === 501 ? `El agente de ${live.machine} no permite tomar el control: actualízalo.` : "No se pudo tomar el control: " + e.message;
+async function setControl(on) {
+  const machine = live.machine;
+  clearInterval(live.renew);
+  if (!on) { // also on close / page exit: keepalive lets it finish after the page is gone
+    flushText();
+    live.ctl = false; drawCtl();
+    fetch("/api/control", { method: "POST", body: JSON.stringify({ machine, on: false }), keepalive: true }).catch(() => {});
+    return;
+  }
+  live.busy = true; drawCtl();
+  try {
+    await api("POST", "/api/control", JSON.stringify({ machine, on: true }));
+    live.ctl = true;
+    shotBody.focus();
+    live.renew = setInterval(() => api("POST", "/api/control", JSON.stringify({ machine, on: true, renew: true }))
+      .catch(e => { if (live.ctl && live.machine === machine) { clearInterval(live.renew); live.ctl = false; drawCtl(); toast("Se perdió el control: " + e.message, "bad"); } }), 10000);
+  } catch (e) { toast(ctlErr(e), "bad"); }
+  finally { live.busy = false; drawCtl(); }
+}
+addEventListener("pagehide", () => { if (live.ctl) setControl(false); });
+
+/* input: sent one by one, in order */
+function send(o) {
+  const body = JSON.stringify({ machine: live.machine, ...o });
+  live.chain = live.chain.then(() => api("POST", "/api/input", body)).catch(e => {
+    if (Date.now() - live.lastErr < 4000) return; // one toast per burst of failures
+    live.lastErr = Date.now();
+    toast(e.status === 501 ? `El agente de ${live.machine} no acepta control remoto: actualízalo.` : e.status === 409 ? "Abre la vista en vivo antes de controlar." : "No llegó al equipo: " + e.message, "bad");
+  });
+}
+function pos(e, img) {
+  const r = img.getBoundingClientRect();
+  return { fx: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), fy: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
+}
+function sendMove(p) { // throttled to ~10/s while dragging
+  live.move = p;
+  if (!live.moveTimer) live.moveTimer = setTimeout(() => { live.moveTimer = 0; send({ type: "move", ...live.move }); }, 100);
+}
+function typeText(t) { live.text += t; clearTimeout(live.textTimer); live.textTimer = setTimeout(flushText, 250); }
+function flushText() { clearTimeout(live.textTimer); if (live.text) { send({ type: "text", text: live.text }); live.text = ""; } }
+
+function wireInput(img) {
+  img.addEventListener("click", () => { if (!live.ctl) toggleFit(); });
+  img.addEventListener("contextmenu", e => { if (live.ctl) e.preventDefault(); });
+  img.addEventListener("pointerdown", e => {
+    if (!live.ctl) return;
+    e.preventDefault(); shotBody.focus(); flushText();
+    live.drag = { button: BTN[e.button] || "left", x: e.clientX, y: e.clientY, p: pos(e, img), moved: false };
+    img.setPointerCapture(e.pointerId);
+  });
+  img.addEventListener("pointermove", e => {
+    const d = live.drag;
+    if (!live.ctl || !d) return;
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) { d.moved = true; send({ type: "down", ...d.p, button: d.button }); }
+    if (d.moved) sendMove(pos(e, img));
+  });
+  img.addEventListener("pointerup", e => {
+    const d = live.drag;
+    live.drag = null;
+    if (!live.ctl || !d) return;
+    if (!d.moved) return send({ type: "click", ...d.p, button: d.button });
+    clearTimeout(live.moveTimer); live.moveTimer = 0;
+    send({ type: "up", ...pos(e, img), button: d.button });
+  });
+  img.addEventListener("wheel", e => {
+    if (!live.ctl) return;
+    e.preventDefault();
+    live.wheel += e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+    const p = pos(e, img);
+    if (!live.wheelTimer) live.wheelTimer = setTimeout(() => {
+      const n = Math.trunc(live.wheel / 100) || Math.sign(live.wheel); // notches; a touchpad flick still moves one
+      live.wheel = 0; live.wheelTimer = 0;
+      if (n) send({ type: "scroll", ...p, dy: n });
+    }, 120);
+  }, { passive: false });
+}
+
+// keyFor: a keydown as {text} (typed as is, in bursts) or {keys:"ctrl+c"} (key.press names).
+const SPECIAL = { Enter: "enter", Escape: "esc", Tab: "tab", Backspace: "backspace", Delete: "delete", Insert: "insert", Home: "home", End: "end",
+  PageUp: "pageup", PageDown: "pagedown", ArrowLeft: "left", ArrowUp: "up", ArrowRight: "right", ArrowDown: "down", ContextMenu: "menu" };
+function keyFor(e) {
+  if (["Control", "Shift", "Alt", "Meta", "AltGraph", "CapsLock", "Dead", "Unidentified"].includes(e.key)) return null;
+  const altgr = e.getModifierState?.("AltGraph"); // @, #, € on Spanish keyboards are text, not ctrl+alt
+  const mods = [];
+  if (e.ctrlKey && !altgr) mods.push("ctrl");
+  if (e.altKey && !altgr) mods.push("alt");
+  if (e.metaKey) mods.push("win");
+  if (e.key.length === 1 && !mods.length) return { text: e.key };
+  let base = SPECIAL[e.key] || (/^F([1-9]|1[0-2])$/.test(e.key) ? e.key.toLowerCase() : null);
+  if (!base && mods.length) {
+    const m = /^(?:Key([A-Z])|Digit(\d))$/.exec(e.code) || (e.key === " " ? [, , "space"] : null);
+    if (m) base = (m[1] || m[2]).toLowerCase();
+  }
+  if (!base) return null;
+  if (e.shiftKey) mods.push("shift");
+  return { keys: [...mods, base].join("+") };
+}
+shotBody.addEventListener("keydown", e => {
+  if (!live.ctl) return;
+  const k = keyFor(e);
+  if (!k) return;
+  e.preventDefault(); e.stopPropagation(); // Esc goes to the PC, it doesn't close the window
+  if (k.text != null) typeText(k.text);
+  else { flushText(); send({ type: "key", keys: k.keys }); }
+});
+document.getElementById("shotKeys").replaceChildren(...QUICK_KEYS.map(([label, keys]) =>
+  $("button", { class: "btn sm", onclick: () => { flushText(); send({ type: "key", keys }); shotBody.focus(); } }, label)));
+
 function toggleFit() {
-  const real = document.getElementById("shotBody").classList.toggle("real");
+  const real = shotBody.classList.toggle("real");
   document.getElementById("shotFit").textContent = real ? "Ajustar" : "Tamaño real";
 }
 document.getElementById("shotFit").onclick = toggleFit;
 document.getElementById("shotClose").onclick = closeShot;
-document.getElementById("shotReload").onclick = loadShot;
-document.getElementById("shotAuto").onchange = e => { clearTimeout(shotTimer); if (e.target.checked) loadShot(); };
-shot.addEventListener("click", e => { if (e.target === shot) closeShot(); });
+document.getElementById("shotCtl").onclick = () => setControl(!live.ctl);
+document.getElementById("shotQ").onchange = startStream;
+shot.addEventListener("click", e => { if (e.target === shot && !live.ctl) closeShot(); }); // with control, only the X closes it
 document.addEventListener("keydown", e => { if (e.key === "Escape") { closeShot(); logs.classList.remove("open"); document.getElementById("app").classList.remove("nav-open"); } });
 
 /* ---------- mobile drawer ---------- */
