@@ -95,16 +95,17 @@ func (WorkEnd) Describe() Descriptor {
 			"type": "object",
 			"properties": {
 				"status": {"type": "string", "enum": ["done", "failed", "cancelled"], "description": "default done"},
-				"summary": {"type": "string"}
+				"summary": {"type": "string"},
+				"id": {"type": "string", "description": "optional: fail unless this is still the current task"}
 			}
 		}`),
 	}
 }
 
 func (w WorkEnd) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
-	var req struct{ Status, Summary string }
+	var req struct{ ID, Status, Summary string }
 	_ = json.Unmarshal(payload, &req)
-	t, err := w.Store.End(req.Status, req.Summary)
+	t, err := w.Store.End(req.ID, req.Status, req.Summary)
 	if err != nil {
 		return nil, badRequest(err)
 	}

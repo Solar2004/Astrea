@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -27,6 +28,9 @@ type workTask struct {
 	LastSeen time.Time  `json:"last_activity"`
 	Actions  int        `json:"actions"`
 	Errors   int        `json:"errors"`
+	// Stale: copied from the panel's cache because the machine did not answer.
+	Stale    bool       `json:"stale,omitempty"`
+	CachedAt *time.Time `json:"cached_at,omitempty"`
 	Notes    []struct {
 		Time     time.Time `json:"time"`
 		Text     string    `json:"text,omitempty"`
@@ -34,38 +38,92 @@ type workTask struct {
 	} `json:"notes,omitempty"`
 }
 
+// workTimeout: short for machines that have not answered lately, so one PC
+// that is off does not hold up the whole list.
+func (p *panel) workTimeout(machine string) time.Duration {
+	p.mu.Lock()
+	seen := p.lastSeen[machine]
+	p.mu.Unlock()
+	if time.Since(time.UnixMilli(seen)) < time.Minute {
+		return 8 * time.Second
+	}
+	return 2 * time.Second
+}
+
+const errNoAnswer = "sin conexión"
+
+// machineWork lists a machine's recent tasks, falling back to the panel's
+// cached copy (stale) when it does not answer. err is set whenever the live
+// list could not be read.
+func (p *panel) machineWork(ctx context.Context, machine string, limit int) ([]workTask, int, error) {
+	var res struct {
+		Tasks []workTask `json:"tasks"`
+	}
+	code, err := p.call(ctx, machine, "work.list", map[string]any{"limit": limit}, &res, p.workTimeout(machine))
+	if err == nil {
+		for i := range res.Tasks {
+			res.Tasks[i].Machine = machine
+		}
+		p.work.putList(machine, res.Tasks)
+		p.mu.Lock()
+		p.lastSeen[machine] = time.Now().UnixMilli()
+		p.mu.Unlock()
+		return res.Tasks, http.StatusOK, nil
+	}
+	if code == http.StatusBadGateway {
+		err = errors.New(errNoAnswer)
+	}
+	tasks, _ := p.work.list(machine)
+	if len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+	return tasks, code, err
+}
+
 // fleetWork gathers every machine's recent tasks, newest first. Machines that
-// do not answer (or run an agent without work.*) are listed in errs.
+// do not answer (or run an agent without work.*) are listed in errs, with
+// their last known tasks marked stale.
 func (p *panel) fleetWork(ctx context.Context, perMachine int) (tasks []workTask, errs map[string]string) {
 	machines := p.reload()
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	errs = map[string]string{}
 	tasks = []workTask{}
+	keep := map[string]bool{}
 	for _, m := range machines {
+		keep[m.Name] = true
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var res struct {
-				Tasks []workTask `json:"tasks"`
-			}
-			_, err := p.call(ctx, m.Name, "work.list", map[string]any{"limit": perMachine}, &res, 8*time.Second)
+			got, _, err := p.machineWork(ctx, m.Name, perMachine)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
 				errs[m.Name] = err.Error()
-				return
 			}
-			for _, t := range res.Tasks {
-				t.Machine = m.Name
+			for _, t := range got {
 				t.Notes = nil // the list stays light; work.get has them
 				tasks = append(tasks, t)
 			}
 		}()
 	}
 	wg.Wait()
+	p.work.forget(keep)
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Started.After(tasks[j].Started) })
 	return tasks, errs
+}
+
+type workAction struct {
+	TS      string `json:"ts"`
+	Method  string `json:"method"`
+	OK      bool   `json:"ok"`
+	Summary string `json:"summary"`
+	Error   string `json:"error,omitempty"`
+}
+
+type workDetail struct {
+	Task    workTask     `json:"task"`
+	Actions []workAction `json:"actions"`
 }
 
 // handleWork:
@@ -73,6 +131,9 @@ func (p *panel) fleetWork(ctx context.Context, perMachine int) (tasks []workTask
 //	GET /api/work                      → every machine's recent tasks, newest first
 //	GET /api/work?machine=NAME         → that machine's tasks
 //	GET /api/work?machine=NAME&id=ID   → one task with its notes and actions
+//
+// When a machine does not answer, its last known data is served with
+// stale:true (and the reason in "error").
 func (p *panel) handleWork(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
@@ -85,44 +146,104 @@ func (p *panel) handleWork(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks, "errors": errs})
 		return
 	}
-	if id := q.Get("id"); id != "" {
-		var res struct {
-			Task    workTask `json:"task"`
-			Actions []struct {
-				Time   string `json:"time"`
-				Method string `json:"method"`
-				Args   string `json:"args"`
-				OK     bool   `json:"ok"`
-				Err    string `json:"err"`
-			} `json:"actions"`
-		}
-		if code, err := p.call(r.Context(), machine, "work.get", map[string]any{"id": id, "limit": 500}, &res, 10*time.Second); err != nil {
-			fail(w, code, err)
-			return
-		}
-		res.Task.Machine = machine
-		actions := make([]map[string]any, 0, len(res.Actions))
-		for _, e := range res.Actions {
-			item := map[string]any{"ts": e.Time, "method": e.Method, "ok": e.OK, "summary": auditSummary(e.Method, e.Args)}
-			if e.Err != "" {
-				item["error"] = e.Err
-			}
-			actions = append(actions, item)
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"task": res.Task, "actions": actions})
+	if p.client(machine) == nil {
+		fail(w, http.StatusNotFound, errUnknownMachine)
 		return
 	}
-	var res struct {
-		Tasks []workTask `json:"tasks"`
-	}
-	if code, err := p.call(r.Context(), machine, "work.list", map[string]any{"limit": limit}, &res, 8*time.Second); err != nil {
+	if id := q.Get("id"); id != "" {
+		d, code, err := p.workDetail(r.Context(), machine, id)
+		if err == nil {
+			writeJSON(w, http.StatusOK, d)
+			return
+		}
+		if c, ok := p.work.detail(machine, id); ok {
+			var cached workDetail
+			if json.Unmarshal(c.Detail, &cached) == nil {
+				cached.Task.Stale, cached.Task.CachedAt = true, &c.At
+				writeJSON(w, http.StatusOK, map[string]any{"task": cached.Task, "actions": cached.Actions, "stale": true, "error": err.Error()})
+				return
+			}
+		}
 		fail(w, code, err)
 		return
 	}
-	for i := range res.Tasks {
-		res.Tasks[i].Machine = machine
+	tasks, code, err := p.machineWork(r.Context(), machine, limit)
+	if err != nil && len(tasks) == 0 {
+		fail(w, code, err)
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": res.Tasks})
+	out := map[string]any{"tasks": tasks}
+	if err != nil {
+		out["stale"], out["error"] = true, err.Error()
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// workDetail reads one task with its actions from the agent (and caches it).
+func (p *panel) workDetail(ctx context.Context, machine, id string) (workDetail, int, error) {
+	var res struct {
+		Task    workTask `json:"task"`
+		Actions []struct {
+			Time   string `json:"time"`
+			Method string `json:"method"`
+			Args   string `json:"args"`
+			OK     bool   `json:"ok"`
+			Err    string `json:"err"`
+		} `json:"actions"`
+	}
+	code, err := p.call(ctx, machine, "work.get", map[string]any{"id": id, "limit": 500}, &res, p.workTimeout(machine))
+	if err != nil {
+		if code == http.StatusBadGateway {
+			err = errors.New(errNoAnswer)
+		}
+		return workDetail{}, code, err
+	}
+	d := workDetail{Task: res.Task, Actions: make([]workAction, 0, len(res.Actions))}
+	d.Task.Machine = machine
+	for _, e := range res.Actions {
+		d.Actions = append(d.Actions, workAction{TS: e.Time, Method: e.Method, OK: e.OK, Summary: auditSummary(e.Method, e.Args), Error: e.Err})
+	}
+	p.work.putDetail(machine, id, d)
+	p.work.patch(machine, d.Task)
+	return d, http.StatusOK, nil
+}
+
+// handleWorkCancel: POST /api/work/cancel?machine=&id= closes that task as
+// cancelled if it is still the machine's current one. The AI's next
+// "continue" on it is refused with the reason, so it stops.
+func (p *panel) handleWorkCancel(w http.ResponseWriter, r *http.Request) {
+	if !mutating(w, r, http.MethodPost) {
+		return
+	}
+	q := r.URL.Query()
+	machine, id := q.Get("machine"), q.Get("id")
+	if id == "" {
+		fail(w, http.StatusBadRequest, errors.New("falta ?id="))
+		return
+	}
+	var admin struct {
+		Work *workTask `json:"work"`
+	}
+	if code, err := p.call(r.Context(), machine, "admin.status", map[string]any{}, &admin, 8*time.Second); err != nil {
+		fail(w, code, err)
+		return
+	}
+	if admin.Work == nil || admin.Work.ID != id {
+		fail(w, http.StatusConflict, errors.New("esa tarea ya no está en curso"))
+		return
+	}
+	var t workTask
+	args := map[string]any{"id": id, "status": "cancelled", "summary": "Cancelada desde el panel"}
+	if code, err := p.call(r.Context(), machine, "work.end", args, &t, 8*time.Second); err != nil {
+		if strings.Contains(err.Error(), "no longer in progress") {
+			code, err = http.StatusConflict, errors.New("esa tarea ya no está en curso")
+		}
+		fail(w, code, err)
+		return
+	}
+	t.Machine = machine
+	p.work.patch(machine, t)
+	writeJSON(w, http.StatusOK, map[string]any{"task": t})
 }
 
 // workStatus: emoji and Spanish label of a task state.
@@ -222,7 +343,7 @@ func (b *telegramBot) fleetWorkText() string {
 	tasks, errs := b.p.fleetWork(context.Background(), 8)
 	var now, recent []string
 	for _, t := range tasks {
-		if t.Status == "running" {
+		if t.Status == "running" && !t.Stale {
 			now = append(now, workLine(t, true))
 		} else if len(recent) < 8 {
 			recent = append(recent, workLine(t, true))

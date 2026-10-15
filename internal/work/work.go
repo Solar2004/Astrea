@@ -191,6 +191,11 @@ func (s *Store) Resolve(spec Spec) (t Task, opened bool, err error) {
 	if spec.Continue {
 		c := s.current()
 		if c == nil {
+			if n := len(s.tasks); n > 0 {
+				if l := s.tasks[n-1]; l.Status == Cancelled && l.Ended != nil && s.now().Sub(*l.Ended) < time.Hour {
+					return Task{}, false, fmt.Errorf("the task %q was cancelled (%s): stop that work; open a new task only if you were asked to", l.Title, l.Summary)
+				}
+			}
 			return Task{}, false, ErrNoCurrent
 		}
 		return *c, false, nil
@@ -239,8 +244,11 @@ func (s *Store) Update(text, progress string) (Task, error) {
 	return *c, nil
 }
 
-// End closes the current task.
-func (s *Store) End(status, summary string) (Task, error) {
+// ErrNotCurrent: End for a task that is no longer the open one.
+var ErrNotCurrent = errors.New("that task is no longer in progress")
+
+// End closes the current task; id, if not empty, must be that task.
+func (s *Store) End(id, status, summary string) (Task, error) {
 	switch status {
 	case "", "ok", "success":
 		status = Done
@@ -253,6 +261,9 @@ func (s *Store) End(status, summary string) (Task, error) {
 	c := s.current()
 	if c == nil {
 		return Task{}, ErrNoCurrent
+	}
+	if id != "" && c.ID != id {
+		return Task{}, ErrNotCurrent
 	}
 	s.close(c, status, summary)
 	s.save()

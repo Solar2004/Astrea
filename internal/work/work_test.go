@@ -48,7 +48,10 @@ func TestLifecycle(t *testing.T) {
 	if got, _ := s.Get(a.ID); got.Status != Replaced || got.Ended == nil {
 		t.Fatalf("previous should be replaced: %+v", got)
 	}
-	if _, err := s.End("failed", "2 fallan"); err != nil {
+	if _, err := s.End(a.ID, "failed", "x"); err != ErrNotCurrent {
+		t.Fatalf("ending a non-current task: %v", err)
+	}
+	if _, err := s.End(b.ID, "failed", "2 fallan"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := s.Current(); ok {
@@ -75,5 +78,17 @@ func TestStale(t *testing.T) {
 	}
 	if l := s.List(1); l[0].Status != Abandoned {
 		t.Fatalf("status: %s", l[0].Status)
+	}
+}
+
+func TestCancelledTellsTheAI(t *testing.T) {
+	s := Open("")
+	a := s.Start("Vídeos", "")
+	if _, err := s.End(a.ID, Cancelled, "Cancelada desde el panel"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := s.Resolve(Spec{Continue: true})
+	if err == nil || err == ErrNoCurrent {
+		t.Fatalf("continue after a cancel should say so: %v", err)
 	}
 }
