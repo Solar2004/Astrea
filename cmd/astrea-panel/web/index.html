@@ -362,7 +362,7 @@
   .feed .li.new { background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
   .feed .li.new .when { color: var(--primary); font-weight: 600; }
   .mcard .notice { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--text-2); margin-top: -4px; }
-  .mcard .notice span:first-of-type { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mcard .notice .txt { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mcard .notice .ago { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .nav-item .badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
 
@@ -1139,7 +1139,7 @@ function noticeLine(key) {
   const text = e.text.split("\n")[0];
   return $("div", { class: "notice", title: e.text },
     $("span", { class: "dot t-" + evTone(e) + (unseen(e) ? " pulse" : ""), "aria-label": unseen(e) ? "Aviso nuevo" : null }),
-    $("span", {}, text), $("span", { class: "ago" }, evAgo(e)));
+    $("span", { class: "txt" }, text), $("span", { class: "ago" }, evAgo(e)));
 }
 
 /* ---------- service logs viewer ---------- */
@@ -1541,11 +1541,11 @@ function draw() {
   const view = document.getElementById("view");
   let content;
   if (r.name === "help") content = viewHelp();
+  else if (r.name === "events") content = viewEvents(S.list || []); // doesn't need the stats
   else if (S.list == null) content = [$("div", { class: "empty" }, S.ok ? "Conectando con los equipos…" : "El panel no responde: " + S.err)];
   else if (r.name === "machine") content = viewMachine(S.list, r.id);
   else if (r.name === "tasks") content = viewTasks(S.list);
   else if (r.name === "task") content = viewTask(r.machine, r.id);
-  else if (r.name === "events") content = viewEvents(S.list);
   else content = viewOverview(S.list);
   view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
   document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea"

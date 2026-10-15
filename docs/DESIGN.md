@@ -76,6 +76,7 @@ Barra lateral                     Contenido
 ✦ Astrea
 ▦ Resumen          ──────────▶    KPIs (en línea · libres · en uso · servicios)
 📋 Tareas      1                   Tareas de la IA (#/tareas) → detalle (#/tareas/EQUIPO/ID)
+🔔 Avisos     ③                   Feed de avisos de la flota (#/avisos), filtro por equipo
 EQUIPOS                           avisos (actualizar / reinstalar)
 ● pc-aula   Libre   3%            tarjetas de equipos → detalle
 ● pc-aula2  Sin conexión
@@ -119,6 +120,7 @@ en el móvil.
 | `GET /api/work?machine=` | Pestaña *Tareas* del equipo; títulos de los enlaces “tarea” en *Actividad* (`audit[].work`) |
 | `GET /api/work?machine=&id=` | Detalle: notas de la IA y acciones reales intercaladas por hora; cada 4 s si sigue en curso |
 | `stale:true` + `cached_at` en `/api/work*` | Copia guardada de una PC que no responde: “Sin conexión · visto HH:MM”, aviso ámbar; una `running` stale se muestra **Estaba en curso** y no cuenta como en curso |
+| `GET /api/events` y luego `?since=last&wait=60` (long-poll sin fin) | *Avisos*: más nuevo arriba, hora relativa, texto tal cual (con emoji y saltos de línea), barra de color por `level` (good/info/warn/bad → verde/índigo/ámbar/rojo), enlace al equipo, filtro por equipo. Contador de no leídos en la barra lateral (último `seq` visto en `localStorage`; la primera visita no marca nada como nuevo); al abrir la vista se marcan leídos y los nuevos quedan resaltados. Tarjeta del Resumen: último aviso del equipo, con el punto latiendo si no está leído. 404 → “panel anterior a la v0.5”. La web conserva los avisos aunque el panel se reinicie |
 | `POST /api/work/cancel?machine=&id=` | Detalle › *Cancelar tarea* (solo en curso y con la PC conectada); confirmación “Sí, la IA dejará esta tarea” + aviso de que no cierra programas |
 
 Cada pestaña tiene URL propia: `#/m/NOMBRE/rendimiento|servicios|tareas|actividad|sistema`.
