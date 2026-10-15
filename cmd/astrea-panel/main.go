@@ -6,6 +6,8 @@
 //
 //	astrea-panel --ws ws://100.x.y.z:7700/ws --token <TOKEN>
 //	astrea-panel   # reads ~/.config/astrea/panel.json (several machines)
+//
+// With telegram.json next to the config it also notifies via Telegram (see telegram.go).
 package main
 
 import (
@@ -85,6 +87,7 @@ func main() {
 	if n := len(p.reload()); n == 0 {
 		logger.Printf("no machines yet (add them to %s; the panel picks them up live)", *cfgPath)
 	}
+	startTelegram(p, telegramConfigPath(*cfgPath), logger)
 
 	static, _ := fs.Sub(webFS, "web")
 	mux := http.NewServeMux()
@@ -199,25 +202,46 @@ func (p *panel) poll(ctx context.Context, m Machine) machineStatus {
 
 // handleScreenshot proxies a live screen capture of one machine as a JPEG.
 func (p *panel) handleScreenshot(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("machine")
-	p.mu.Lock()
-	var client *transport.ReconnectingClient
-	for _, m := range p.machines {
-		if m.Name == name {
-			client = p.clients[m.WS]
-		}
-	}
-	p.mu.Unlock()
-	if client == nil {
-		http.Error(w, "máquina desconocida", http.StatusNotFound)
+	data, mime, err := p.capture(r.Context(), r.URL.Query().Get("machine"))
+	if errors.Is(err, errUnknownMachine) {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
-	defer cancel()
-	res, err := client.Call(ctx, "screen.capture", map[string]any{"max_width": 1280, "format": "jpeg", "quality": 70})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+var errUnknownMachine = errors.New("máquina desconocida")
+
+// client returns the agent client of the machine with that name, or nil.
+func (p *panel) client(name string) *transport.ReconnectingClient {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, m := range p.machines {
+		if m.Name == name {
+			return p.clients[m.WS]
+		}
+	}
+	return nil
+}
+
+// capture takes a live screenshot of one machine; returns the image bytes and
+// their MIME type. Shared by the web panel and the Telegram bot.
+func (p *panel) capture(ctx context.Context, name string) ([]byte, string, error) {
+	client := p.client(name)
+	if client == nil {
+		return nil, "", errUnknownMachine
+	}
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	res, err := client.Call(ctx, "screen.capture", map[string]any{"max_width": 1280, "format": "jpeg", "quality": 70})
+	if err != nil {
+		return nil, "", err
 	}
 	var out struct {
 		Images []struct {
@@ -226,17 +250,13 @@ func (p *panel) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		} `json:"images"`
 	}
 	if json.Unmarshal(res.Result, &out) != nil || len(out.Images) == 0 {
-		http.Error(w, "esta PC no devolvió imagen (¿sin escritorio/sesión?)", http.StatusBadGateway)
-		return
+		return nil, "", errors.New("esta PC no devolvió imagen (¿sin escritorio/sesión?)")
 	}
 	data, err := base64.StdEncoding.DecodeString(out.Images[0].Data)
 	if err != nil {
-		http.Error(w, "imagen inválida", http.StatusBadGateway)
-		return
+		return nil, "", errors.New("imagen inválida")
 	}
-	w.Header().Set("Content-Type", out.Images[0].MimeType)
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(data)
+	return data, out.Images[0].MimeType, nil
 }
 
 func defaultConfigPath() string {
