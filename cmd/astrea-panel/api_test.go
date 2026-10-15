@@ -25,6 +25,9 @@ astrea-panel --ws ws://100.81.60.38:7700/ws --token ` + tok, "", "ws://100.81.60
 			t.Errorf("%s: got (%q, %q, %q)", c.name, name, ws, token)
 		}
 	}
+	if _, ws, token := parseCard("add-machine prueba 100.64.0.99 abc"); ws != "ws://100.64.0.99:7700/ws" || token != "abc" {
+		t.Errorf("short-token line parsed as %q %q", ws, token)
+	}
 	if _, ws, token := parseCard("hola"); ws != "" || token != "" {
 		t.Errorf("garbage parsed as %q %q", ws, token)
 	}

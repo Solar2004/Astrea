@@ -186,7 +186,7 @@ func (p *panel) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
 
 var (
 	reWS        = regexp.MustCompile(`wss?://[A-Za-z0-9.\-:\[\]]+/ws`)
-	reAddLine   = regexp.MustCompile(`add-machine\s+(\S+)\s+(\S+)\s+([A-Za-z0-9_\-]{16,})`)
+	reAddLine   = regexp.MustCompile(`add-machine\s+(\S+)\s+(\S+)\s+(\S+)`)
 	reTokenFlag = regexp.MustCompile(`--token["'\s,\-]*["']?([A-Za-z0-9_\-]{16,})`)
 	reTokenJSON = regexp.MustCompile(`"token"\s*:\s*"([A-Za-z0-9_\-]{16,})"`)
 	reBadName   = regexp.MustCompile(`[^A-Za-z0-9_\-]+`)
@@ -295,6 +295,10 @@ func (p *panel) addMachine(w http.ResponseWriter, r *http.Request) {
 	}
 	if q := r.URL.Query().Get("name"); q != "" {
 		name = q
+	}
+	if ws != "" && token != "" && len(token) < 16 {
+		fail(w, http.StatusBadRequest, errors.New("el token parece incompleto (tiene "+strconv.Itoa(len(token))+" caracteres; los de Astrea tienen 64): copia la ficha completa"))
+		return
 	}
 	if ws == "" || token == "" {
 		fail(w, http.StatusBadRequest, errors.New("no encuentro la dirección (ws://…/ws) y el token en lo que pegaste; copia la ficha completa de hub-config.txt"))
