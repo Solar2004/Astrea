@@ -552,7 +552,7 @@ const $ = (tag, attrs = {}, ...kids) => {
     else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
     else el.setAttribute(k, v === true ? "" : v);
   }
-  for (const k of kids.flat()) if (k != null && k !== false) el.append(k);
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) el.append(k); // views nest arrays (groups of rows)
   return el;
 };
 const SVG = "http://www.w3.org/2000/svg";
@@ -1464,13 +1464,13 @@ async function rescan(key) {
 
 function tabMemory(m, key) {
   const c = load(memURL(key), 30000), u = memUI(key);
-  if (!c.t) return $("div", { class: "card empty" }, "Cargando la memoria…");
+  if (!c.t) return $("div", { class: "card empty" }, "Cargando la memoria… Si el agente acaba de arrancar, la primera vez puede tardar hasta un minuto y medio.");
   if (c.err && !c.data) return c.status === 501 || /no tiene memory|unknown_method/.test(c.err)
     ? $("div", { class: "card empty" }, $("h2", {}, "Este equipo aún no tiene memoria"),
         $("p", {}, "Actualiza el agente para tener memoria: notas que la IA guarda sobre este equipo y un inventario de lo que tiene instalado."),
         needsUpdate(m) ? confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", cls: "primary", run: () => updateAgent(key) }) : null)
     : $("div", { class: "callout t-bad" }, icon("alert"), $("div", {}, $("b", {}, "No se pudo leer la memoria"), $("p", {}, c.err)));
-  const { notes = [], inventory: inv, summary } = c.data;
+  const notes = c.data.notes || [], inv = c.data.inventory, summary = c.data.summary; // the agent sends notes:null when there are none
 
   const form = $("form", { class: "note-form", onsubmit: e => { e.preventDefault(); addNote(key); } },
     $("textarea", { class: "input", placeholder: "Deja una nota a la IA sobre este equipo: “los modelos están en D:\\models”…", "aria-label": "Nota nueva",
@@ -1676,13 +1676,19 @@ function draw() {
   drawSidebar();
   const view = document.getElementById("view");
   let content;
-  if (r.name === "help") content = viewHelp();
-  else if (r.name === "events") content = viewEvents(S.list || []); // doesn't need the stats
-  else if (S.list == null) content = [$("div", { class: "empty" }, S.ok ? "Conectando con los equipos…" : "El panel no responde: " + S.err)];
-  else if (r.name === "machine") content = viewMachine(S.list, r.id);
-  else if (r.name === "tasks") content = viewTasks(S.list);
-  else if (r.name === "task") content = viewTask(r.machine, r.id);
-  else content = viewOverview(S.list);
+  try {
+    if (r.name === "help") content = viewHelp();
+    else if (r.name === "events") content = viewEvents(S.list || []); // doesn't need the stats
+    else if (S.list == null) content = [$("div", { class: "empty" }, S.ok ? "Conectando con los equipos…" : "El panel no responde: " + S.err)];
+    else if (r.name === "machine") content = viewMachine(S.list, r.id);
+    else if (r.name === "tasks") content = viewTasks(S.list);
+    else if (r.name === "task") content = viewTask(r.machine, r.id);
+    else content = viewOverview(S.list);
+  } catch (e) {
+    console.error(e);
+    content = [$("div", { class: "callout t-bad" }, icon("alert"), $("div", {}, $("b", {}, "Esta vista ha fallado"),
+      $("p", {}, "Es un fallo del panel, no del equipo. Detalle: " + e.message)))];
+  }
   view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
   document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea"
     : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
