@@ -344,7 +344,7 @@ func (n *Node) CallWith(ctx context.Context, method string, args, out any) error
 }
 
 // TooOldForUpdate explains an agent without agent.update.
-const TooOldForUpdate = "agente anterior a v0.3.0 sin auto-update: reinstálalo una vez (MSI o install.ps1/install.sh) y a partir de ahí se actualiza solo"
+const TooOldForUpdate = "agente v0.2.x sin auto-update: ejecuta una vez astrea-hub update --migrate (o reinstálalo) y a partir de ahí se actualiza solo"
 
 // UpdateResult is what agent.update reports for one node.
 type UpdateResult struct {

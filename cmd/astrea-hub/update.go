@@ -22,6 +22,7 @@ import (
 //	astrea-hub update --check    # only report versions
 //	astrea-hub update --local    # hub + panel only
 //	astrea-hub update --fleet    # agents only
+//	astrea-hub update --migrate  # also agents from v0.2.x (one-time, via exec)
 func runUpdate(args []string) {
 	fs := flag.NewFlagSet("astrea-hub update", flag.ExitOnError)
 	cfgPath := fs.String("config", fleet.DefaultPath(), "machines file")
@@ -30,6 +31,7 @@ func runUpdate(args []string) {
 	onlyFleet := fs.Bool("fleet", false, "only update the agents")
 	force := fs.Bool("force", false, "reinstall even if up to date; update agents even with jobs running")
 	asJSON := fs.Bool("json", false, "machine-readable output")
+	migrate := fs.Bool("migrate", false, "also bring v0.2.x agents (no auto-update yet) to the latest release, once, through exec")
 	_ = fs.Parse(args)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -63,14 +65,23 @@ func runUpdate(args []string) {
 		if err != nil {
 			say("flota: %v", err)
 		} else {
-			res := fleet.New(machines).UpdateAll(ctx, *check, *force)
+			fl := fleet.New(machines)
+			res := fl.UpdateAll(ctx, *check, *force)
+			if *migrate && !*check {
+				for i, r := range res {
+					if r.Error == fleet.TooOldForUpdate {
+						say("  … %-18s v0.2.x: migrando una vez vía exec", r.Name)
+						res[i] = fl.Get(r.Name).Migrate(ctx, latest)
+					}
+				}
+			}
 			for _, r := range res {
 				switch {
 				case r.Error != "":
 					failed = true
 					say("  ✗ %-18s %s", r.Name, r.Error)
 				case r.Updated:
-					say("  ↑ %-18s %s → %s (reiniciando)", r.Name, r.Current, r.Target)
+					say("  ↑ %-18s %s → %s (reiniciando)", r.Name, orDev(r.Current), r.Target)
 				case *check && update.Newer(r.Current, r.Latest):
 					say("  • %-18s %s (hay %s)", r.Name, r.Current, r.Latest)
 				default:

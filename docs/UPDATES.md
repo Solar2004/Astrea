@@ -60,9 +60,29 @@ debe servir `/latest` (redirección a `.../tag/vX.Y.Z`),
 
 Las builds de desarrollo (`version = dev`) nunca se auto-actualizan.
 
-## Venir de v0.2.x
+## Venir de v0.2.0 / v0.2.1 (una sola vez)
 
-Los agentes anteriores a v0.3.0 no tienen `agent.update`: reinstálalos **una
-vez** (MSI o `install.ps1` / `install.sh agent`). `astrea-hub update --check`
-te dice cuáles. En el hub, vuelve a ejecutar `install.sh hub` para obtener
-el timer diario.
+Los agentes v0.2.x no saben actualizarse solos, pero **no hace falta ir a cada
+PC**: el hub los migra en remoto usando su `exec`.
+
+**1. En tu PC principal** (actualiza hub + panel y activa el timer diario):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Solar2004/Astrea/main/scripts/install.sh | bash -s hub
+```
+
+**2. Migra los agentes** (descarga el agente nuevo en cada PC, verifica el
+SHA-256, lo cambia y lo reinicia; tarda ~10 s por PC):
+
+```sh
+astrea-hub update --migrate
+```
+
+O desde el panel: botón **Actualizar** en cada PC.
+
+Las PCs apagadas se quedan como estaban: repite el comando cuando estén
+encendidas. A partir de ahí, nunca más: se actualizan solas.
+
+Si una migración falla, el agente viejo sigue funcionando (el binario solo se
+cambia tras verificar el hash). Como último recurso, reinstala en esa PC con
+el MSI o `install.ps1`, que conservan el token.

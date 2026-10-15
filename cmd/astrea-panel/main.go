@@ -244,6 +244,18 @@ func (p *panel) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 var errUnknownMachine = errors.New("máquina desconocida")
 
+// machine returns the configured machine with that name, or nil.
+func (p *panel) machine(name string) *Machine {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, m := range p.machines {
+		if m.Name == name {
+			return &m
+		}
+	}
+	return nil
+}
+
 // client returns the agent client of the machine with that name, or nil.
 func (p *panel) client(name string) *transport.ReconnectingClient {
 	p.mu.Lock()

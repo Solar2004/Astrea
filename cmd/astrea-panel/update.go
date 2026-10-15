@@ -118,11 +118,31 @@ func (p *panel) updateAgent(ctx context.Context, name string, force bool) map[st
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	res, err := client.Call(ctx, "agent.update", map[string]any{"force": force})
+	if err != nil && strings.Contains(err.Error(), "unknown method") {
+		// v0.2.x agent: migrate it once through exec; it self-updates after.
+		latest := p.latest.get(ctx)
+		if latest == "" {
+			out["error"] = "no pude consultar la última versión en GitHub"
+			return out
+		}
+		m := p.machine(name)
+		if m == nil {
+			out["error"] = errUnknownMachine.Error()
+			return out
+		}
+		node := fleet.New([]fleet.Machine{fleet.Machine(*m)}).Get(name)
+		r := node.Migrate(ctx, latest)
+		out["migrated"] = true
+		out["target"], out["updated"], out["note"] = r.Target, r.Updated, r.Note
+		if r.Error != "" {
+			out["error"] = r.Error
+		} else {
+			out["ok"] = true
+		}
+		return out
+	}
 	if err != nil {
 		out["error"] = err.Error()
-		if strings.Contains(err.Error(), "unknown method") {
-			out["error"] = fleet.TooOldForUpdate
-		}
 		return out
 	}
 	var r map[string]any
