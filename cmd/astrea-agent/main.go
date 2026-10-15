@@ -118,8 +118,9 @@ func run() *log.Logger {
 		}
 	}
 	if *logFile != "" {
+		// Not closed on return: the restart after an update logs after run()
+		// returns, and the OS closes the file when the process exits.
 		if f, err := openLog(*logFile); err == nil {
-			defer f.Close()
 			// File first: io.MultiWriter stops at the first failing writer, and
 			// stderr is an invalid handle in a GUI-subsystem process.
 			logger.SetOutput(io.MultiWriter(f, os.Stderr))
@@ -344,6 +345,16 @@ func run() *log.Logger {
 
 	<-ctx.Done()
 	logger.Println("shutting down")
+	// After an update, never stay down because stopping something hangs
+	// (a service that ignores the stop, a stuck job): restart regardless.
+	if restartRequested.Load() {
+		time.AfterFunc(20*time.Second, func() {
+			logger.Println("shutdown took more than 20s; restarting anyway")
+			if restartAfterExit(logger) {
+				os.Exit(0)
+			}
+		})
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)

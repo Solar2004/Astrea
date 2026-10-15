@@ -36,11 +36,10 @@ type hermesConfig struct {
 	Kinds  []string `json:"kinds,omitempty"`
 }
 
-// hermesKinds: lo que merece despertar a la IA por defecto. Lo que ella misma
-// acaba de hacer (tarea terminada bien) o lo muy frecuente (alguien se sentó)
-// no; se puede pedir en "kinds".
-var hermesKinds = []string{"work.failed", "job.done", "job.failed", "download.done",
-	"download.failed", "service.failed", "offline", "lock", "disk.full"}
+// hermesKinds: solo lo que toca al trabajo de la IA (lo que lanzó terminó o
+// falló, o le cancelaron la tarea). La salud de la flota (PC apagada, freno,
+// disco, servicios) es para el dueño y va solo a Telegram. "kinds" lo cambia.
+var hermesKinds = []string{"work.failed", "job.done", "job.failed", "download.done", "download.failed"}
 
 const hermesBatch = 5 * time.Second
 

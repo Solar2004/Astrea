@@ -189,7 +189,9 @@ El panel vigila la flota y registra cada cambio: tarea, job o descarga
 terminados o fallidos, servicio caído, PC encendida/apagada, freno, alguien se
 sentó / quedó libre, GPU caliente, disco lleno. Llegan a Telegram, al panel
 (`GET /api/events?since=&wait=`), a la IA (`astrea.fleet.events`) y, con
-`hermes.json` junto a `machines.json`, despiertan a Hermes por su webhook:
+`hermes.json` junto a `machines.json`, los de su propio trabajo (job o
+descarga terminados, tarea fallida o cancelada) despiertan a Hermes por su
+webhook; la salud de la flota (PC apagada, freno, disco…) va solo a Telegram:
 
 ```json
 {"url": "http://127.0.0.1:8644/webhooks/astrea", "secret": "…"}

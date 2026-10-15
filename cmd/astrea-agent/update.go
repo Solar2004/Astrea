@@ -20,6 +20,9 @@ import (
 // binary once this process has shut down cleanly.
 var restartRequested atomic.Bool
 
+// restarting makes sure only one fresh copy is started.
+var restarting atomic.Bool
+
 // requestRestart asks the agent to shut down and come back up.
 func requestRestart(stop func()) {
 	restartRequested.Store(true)
@@ -32,9 +35,9 @@ func requestRestart(stop func()) {
 
 // restartAfterExit brings the agent back after a requested restart: systemd
 // does it by itself on our exit code, otherwise we spawn the new binary.
-func restartAfterExit(logger *log.Logger) {
-	if !restartRequested.Load() {
-		return
+func restartAfterExit(logger *log.Logger) bool {
+	if !restartRequested.Load() || !restarting.CompareAndSwap(false, true) {
+		return false // not asked, or already done (normal exit vs. the shutdown watchdog)
 	}
 	if update.Supervised() {
 		logger.Printf("restarting: exit %d, systemd starts the new binary", update.ExitRestart)
@@ -49,6 +52,7 @@ func restartAfterExit(logger *log.Logger) {
 		os.Exit(1)
 	}
 	logger.Printf("restarting: spawned %s", exe)
+	return true
 }
 
 // updater checks GitHub Releases and installs newer agent binaries.
