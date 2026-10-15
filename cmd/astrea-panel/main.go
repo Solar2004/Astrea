@@ -280,7 +280,7 @@ func (p *panel) capture(ctx context.Context, name string) ([]byte, string, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	res, err := client.Call(ctx, "screen.capture", map[string]any{"max_width": 1280, "format": "jpeg", "quality": 70})
+	res, err := client.Call(ctx, "screen.capture", map[string]any{"max_width": 1920, "format": "jpeg", "quality": 75})
 	if err != nil {
 		return nil, "", err
 	}

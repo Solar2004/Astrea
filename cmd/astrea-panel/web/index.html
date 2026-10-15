@@ -277,8 +277,11 @@
   .sheet .bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--divider); }
   .sheet .bar h3 { margin: 0; font-size: 15px; font-weight: 650; }
   .sheet .bar small { color: var(--text-3); font-size: 12px; }
-  .sheet .body { padding: 14px; display: grid; place-items: center; min-width: min(640px, 90vw); min-height: 300px; background: var(--bg); }
-  .sheet img { max-width: 100%; max-height: 78vh; border-radius: 10px; display: block; box-shadow: var(--shadow-md); }
+  .sheet .body { padding: 14px; display: flex; align-items: center; justify-content: center; min-width: min(640px, 90vw); min-height: 300px; background: var(--bg); overflow: auto; }
+  /* Fit: the whole screen always visible, never cropped. Real size: scroll around it. */
+  .sheet img { display: block; width: auto; height: auto; max-width: calc(96vw - 28px); max-height: calc(94vh - 92px); object-fit: contain; border-radius: 10px; box-shadow: var(--shadow-md); cursor: zoom-in; }
+  .sheet .body.real { display: block; max-width: 96vw; max-height: calc(94vh - 64px); }
+  .sheet .body.real img { max-width: none; max-height: none; cursor: zoom-out; }
   .sheet .msg { color: var(--text-2); padding: 40px; text-align: center; }
   .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
   .toggle input { appearance: none; width: 36px; height: 22px; border-radius: 999px; background: var(--surface-3); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
@@ -387,6 +390,7 @@
       <div><h3 id="shotTitle">Pantalla</h3><small id="shotWhen"></small></div>
       <span class="spacer"></span>
       <label class="toggle"><input type="checkbox" id="shotAuto">En vivo</label>
+      <button class="btn sm ghost" id="shotFit">Tamaño real</button>
       <button class="btn sm" id="shotReload"><svg class="icon"><use href="#i-refresh"/></svg>Actualizar</button>
       <button class="btn sm ghost icon-only" id="shotClose" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
@@ -1129,6 +1133,8 @@ function showShot(machine, title) {
 }
 function closeShot() {
   shot.classList.remove("open");
+  document.getElementById("shotBody").classList.remove("real");
+  document.getElementById("shotFit").textContent = "Tamaño real";
   document.getElementById("shotAuto").checked = false;
   clearTimeout(shotTimer);
 }
@@ -1142,10 +1148,16 @@ function loadShot() {
     shotLoading = false;
     if (document.getElementById("shotAuto").checked && shot.classList.contains("open")) shotTimer = setTimeout(loadShot, 3000);
   };
+  img.onclick = toggleFit;
   img.onload = () => { body.replaceChildren(img); document.getElementById("shotWhen").textContent = "Captura de las " + hhmmss(Date.now()); done(); };
   img.onerror = () => { body.replaceChildren($("div", { class: "msg" }, $("b", {}, "No se pudo ver la pantalla"), $("br"), "Puede que nadie haya iniciado sesión en ese equipo.")); done(); };
   img.src = "/api/screenshot?machine=" + encodeURIComponent(shotMachine) + "&t=" + Date.now();
 }
+function toggleFit() {
+  const real = document.getElementById("shotBody").classList.toggle("real");
+  document.getElementById("shotFit").textContent = real ? "Ajustar" : "Tamaño real";
+}
+document.getElementById("shotFit").onclick = toggleFit;
 document.getElementById("shotClose").onclick = closeShot;
 document.getElementById("shotReload").onclick = loadShot;
 document.getElementById("shotAuto").onchange = e => { clearTimeout(shotTimer); if (e.target.checked) loadShot(); };
