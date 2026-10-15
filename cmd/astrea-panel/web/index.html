@@ -641,6 +641,15 @@ function presence(m, key) {
   if (idle.user_active) return { tone: "warn", label: "En uso", detail: "Alguien la está usando" + (idle.process ? " · " + idle.process : "") };
   return { tone: "good", label: "Libre", detail: "Sin actividad " + ago(idle.idle_sec).replace("hace ", "desde hace ") };
 }
+// idle.why is a closed list (internal/power/power.go); unknown values are not shown.
+const WHY = {
+  "keyboard/mouse in use": "Usando teclado/ratón",
+  "the lock screen is up": "Pantalla bloqueada",
+  "a single touch, not someone using it": "Un toque suelto, no hay nadie",
+  "no input from a person": "Nadie la ha tocado",
+  "no input from a person recently": "Nadie la toca hace rato",
+  "recent input (no history yet)": "Actividad reciente",
+};
 function gpuPeak(s) {
   let u = null, v = null;
   for (const g of (s?.gpus || [])) {
@@ -1540,7 +1549,7 @@ function tabSystem(m, s) {
       li("Sistema operativo", null, osName(s) || "—"),
       li("Nombre del equipo", null, s?.host?.hostname || "—"),
       li("Encendido desde hace", null, s?.host?.uptime_sec != null ? uptime(s.host.uptime_sec) : "—"),
-      li("Sesión", "Si alguien está usando el equipo ahora", idle ? (idle.session === "none" ? "Nadie ha iniciado sesión" : idle.locked ? "Pantalla bloqueada" : idle.user_active ? "En uso" + (idle.process ? " · " + idle.process : "") : "Inactiva " + ago(idle.idle_sec)) : "—")),
+      li("Sesión", (!idle?.locked && WHY[idle?.why]) || "Si alguien está usando el equipo ahora", idle ? (idle.session === "none" ? "Nadie ha iniciado sesión" : idle.locked ? "Pantalla bloqueada" : idle.user_active ? "En uso" + (idle.process ? " · " + idle.process : "") : "Inactiva " + ago(idle.idle_sec)) : "—")),
     $("div", { class: "list-title" }, "Permisos de la IA"),
     $("div", { class: "list" },
       li("Nivel de control", a.mode === "readonly" ? "La IA puede mirar, pero no cambiar nada" : "La IA puede ejecutar, instalar y usar el ratón y el teclado",
