@@ -116,6 +116,6 @@ func defaultCacheDir() string {
 const serverInstructions = `Astrea controls the owner's machines. The owner watches what you do on each one as a task list.
 
 Every action that changes a machine (exec, fs.write, mouse/keyboard, jobs, services, tasks…) takes a "work" argument saying which task it belongs to:
-- {"title": "Generate 5 videos with MiniMax", "detail": "for the Instagram campaign"} opens a new task on that machine (closing the previous one);
+- {"title": "...", "detail": "..."} opens a new task on that machine (closing the previous one) — any kind of work: "Install and configure Blender", "Run the test suite of project X", "Build the release of the app", "Clean up the Downloads folder";
 - "continue" means it is part of the task already open there.
 Report progress with work.update ("3/5") and close with work.end (done / failed / cancelled, plus a short summary of what was produced). Looking (fleet.status, sys.stats, screen.capture, fs.read…) needs no task.`

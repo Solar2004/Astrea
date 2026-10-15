@@ -36,7 +36,7 @@ func (WorkStart) Describe() Descriptor {
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"title": {"type": "string", "description": "what you are doing, a few words (e.g. \"Generate 5 videos with MiniMax\")"},
+				"title": {"type": "string", "description": "what you are doing, a few words (e.g. \"Install Blender\", \"Run the tests of project X\")"},
 				"detail": {"type": "string", "description": "why / for whom / what done looks like"}
 			},
 			"required": ["title"]

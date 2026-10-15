@@ -1,5 +1,5 @@
 // Package work keeps the machine's declared work: what the AI says it is
-// doing here ("generate 5 videos with MiniMax", "run the tests of X").
+// doing here ("install Blender", "run the tests of project X").
 //
 // Every action that changes something arrives tagged with the task it belongs
 // to — the current one ("continue") or a new one it opens — so the audit log

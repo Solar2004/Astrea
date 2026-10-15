@@ -722,7 +722,7 @@ async function loadVersion() {
 async function api(method, url, body) {
   const r = await fetch(url, { method, body, cache: "no-store" });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || (j && j.error)) {
+  if (!r.ok || (j && j.error && !j.stale)) { // stale: the panel's cached copy, still usable
     const e = new Error((j && j.error) || "HTTP " + r.status);
     e.status = r.status; e.detail = j && j.detail;
     throw e;
@@ -815,8 +815,12 @@ const WORK = {
   abandoned: ["warn", "Abandonada", "moon"],
 };
 const workState = st => WORK[st] || ["neutral", st || "Desconocido", "dot"];
+// A stale "running" task only means "it was running the last time we saw that PC".
+const liveRunning = t => t.status === "running" && !t.stale;
+const taskState = t => t.status === "running" && t.stale ? ["neutral", "Estaba en curso", "play"] : workState(t.status);
+const seenAt = t => t.cached_at ? "Su equipo no responde: así estaba " + when(t.cached_at) : "Su equipo no responde";
 const WORK_HINT = { replaced: "La IA empezó otra tarea sin cerrar esta", abandoned: "Pasó demasiado tiempo sin actividad" };
-const workChip = st => { const [tone, label] = workState(st); return $("span", { class: "chip t-" + tone, title: WORK_HINT[st] || null }, $("span", { class: "dot" }), label); };
+const workChip = t => { const [tone, label] = taskState(t); return $("span", { class: "chip t-" + tone, title: t.stale ? seenAt(t) : WORK_HINT[t.status] || null }, $("span", { class: "dot" }), label); };
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function dur(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -827,13 +831,23 @@ function dur(ms) {
   if (h < 24) return `${h} h${m % 60 ? " " + String(m % 60).padStart(2, "0") + " min" : ""}`;
   return `${Math.floor(h / 24)} d${h % 24 ? " " + (h % 24) + " h" : ""}`;
 }
-const taskDur = t => dur((t.ended ? Date.parse(t.ended) : Date.now()) - Date.parse(t.started));
+// A stale task stopped being visible at its last activity, not "now".
+const taskDur = t => dur((Date.parse(t.ended || (t.stale ? t.last_activity : "")) || Date.now()) - Date.parse(t.started));
 // "3/5" → 60 (a meter); anything else stays plain text.
 function fraction(p) {
   const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(p || "");
   return m && +m[2] > 0 ? Math.min(100, +m[1] / +m[2] * 100) : null;
 }
 const isProblem = t => t.status === "failed" || t.status === "abandoned" || t.errors > 0;
+function cancelTask(machine, id, url) {
+  return act("cancel:" + machine + "/" + id, async () => {
+    const j = await api("POST", "/api/work/cancel?" + q({ machine, id }));
+    const c = S.cache[url];
+    if (c?.data && j.task) c.data.task = { ...c.data.task, ...j.task };
+    for (const k of Object.keys(S.cache)) if (k.startsWith("/api/work?") && k !== url) S.cache[k].t = 0; // lists refetch
+    toast("Tarea cancelada: la IA ya no puede seguir con ella.");
+  });
+}
 
 // load(): GET a JSON endpoint at most every `ttl` ms, redrawing when it lands.
 // The view reads S.cache[url] synchronously, so the 2 s redraw never waits on the network.
@@ -865,8 +879,8 @@ function workStrip(w) {
 }
 
 function taskRow(t, withMachine) {
-  const [tone, , ic] = workState(t.status);
-  const f = t.status === "running" ? fraction(t.progress) : null;
+  const [tone, , ic] = taskState(t);
+  const f = liveRunning(t) ? fraction(t.progress) : null;
   return $("a", { class: "li", href: taskHref(t.machine, t.id) },
     $("span", { class: "st-tile t-" + tone, "aria-hidden": "true" }, icon(ic)),
     $("div", { class: "what" },
@@ -874,13 +888,14 @@ function taskRow(t, withMachine) {
       $("div", { class: "meta" },
         withMachine ? $("span", {}, t.machine) : null,
         $("span", {}, new Date(t.started).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })), // the day is the group title
-        $("span", {}, (t.status === "running" ? "lleva " : "duró ") + taskDur(t)),
+        $("span", {}, (liveRunning(t) ? "lleva " : t.status === "running" ? "llevaba " : "duró ") + taskDur(t)),
         t.progress ? $("span", {}, "Progreso " + t.progress) : null,
         $("span", {}, plural(t.actions || 0, "acción", "acciones")),
-        t.errors ? $("span", { class: "bad" }, plural(t.errors, "error", "errores")) : null),
+        t.errors ? $("span", { class: "bad" }, plural(t.errors, "error", "errores")) : null,
+        t.stale ? $("span", { title: seenAt(t) }, "Sin conexión" + (t.cached_at ? " · visto " + when(t.cached_at) : "")) : null),
       t.status !== "running" && t.summary ? $("div", { class: "meta", title: t.summary }, $("span", {}, t.summary)) : null,
       f != null ? meter(f, { thin: true, label: "Progreso" }) : null),
-    workChip(t.status), icon("chev", "chev"));
+    workChip(t), icon("chev", "chev"));
 }
 
 // taskGroups: one inset list per day, newest first ("Hoy", "Ayer", "12 oct").
@@ -899,11 +914,11 @@ function taskGroups(tasks, withMachine) {
     $("div", { class: "list tasks" }, ts.map(t => taskRow(t, withMachine)))]);
 }
 function tasksFiltered(tasks, machine = "") {
-  return tasks.filter(t => (S.taskFilter === "running" ? t.status === "running" : S.taskFilter === "problems" ? isProblem(t) : true) &&
+  return tasks.filter(t => (S.taskFilter === "running" ? liveRunning(t) : S.taskFilter === "problems" ? isProblem(t) : true) &&
                            (!machine || t.machine === machine));
 }
 function taskToolbar(tasks, machines) {
-  const n = { all: tasks.length, running: tasks.filter(t => t.status === "running").length, problems: tasks.filter(isProblem).length };
+  const n = { all: tasks.length, running: tasks.filter(liveRunning).length, problems: tasks.filter(isProblem).length };
   return $("div", { class: "toolbar" },
     $("div", { class: "segmented", role: "tablist", "aria-label": "Filtrar tareas", style: "margin:0" },
       [["all", "Todas"], ["running", "En curso"], ["problems", "Con problemas"]].map(([k, label]) =>
@@ -919,7 +934,7 @@ const noTasks = () => $("div", { class: "card empty" }, $("h2", {}, S.taskFilter
     : S.taskFilter === "problems" ? "Ninguna tarea ha fallado ni ha dado errores."
     : "Cuando tu IA haga algo en un equipo, lo agrupará en una tarea con un título: “Generar vídeos”, “Instalar llama.cpp”… Aquí podrás revisar cada una paso a paso."));
 // An agent older than v0.4 doesn't know work.*: say so in plain words.
-const workErr = e => /unknown_method|not found|404|501/.test(e) ? "su agente es anterior a la v0.4 (actualízalo para ver sus tareas)" : e;
+const workErr = e => /unknown_method|not found|no tiene work|404|501/.test(e) ? "su agente es anterior a la v0.4 (actualízalo para ver sus tareas)" : e;
 
 function viewTasks(list) {
   const c = load("/api/work?limit=30", 8000);
@@ -934,7 +949,7 @@ function viewTasks(list) {
   const all = c.data.tasks || [], errs = Object.entries(c.data.errors || {});
   const today = new Date().toDateString();
   const doneToday = all.filter(t => t.status === "done" && new Date(t.ended || t.started).toDateString() === today).length;
-  const running = all.filter(t => t.status === "running");
+  const running = all.filter(liveRunning);
   const problems = all.filter(isProblem).length;
   const machines = [...new Set([...list.map(keyOf), ...all.map(t => t.machine)])];
   const shown = tasksFiltered(all, S.taskMachine);
@@ -957,31 +972,39 @@ function tabWork(m, key) {
     needsUpdate(m) ? $("div", { class: "actions" }, confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", cls: "primary", run: () => updateAgent(key) })) : null);
   const all = c.data.tasks || [];
   const shown = tasksFiltered(all.map(t => ({ ...t, machine: t.machine || key })));
-  return [taskToolbar(all), shown.length ? taskGroups(shown, false) : noTasks(),
+  return [c.data.stale ? staleNote(all[0]) : null, taskToolbar(all), shown.length ? taskGroups(shown, false) : noTasks(),
     $("div", { class: "list-foot" }, "Las tareas las declara la IA al empezar a trabajar; cada acción que cambia algo queda apuntada en la suya.")];
 }
+
+const staleNote = t => $("div", { class: "callout t-warn" }, icon("alert"),
+  $("div", {}, $("b", {}, "Sin conexión con el equipo"),
+    $("p", {}, "Ves la última copia que guardó el panel" + (t?.cached_at ? " (" + when(t.cached_at) + ")" : "") + ". Puede que la IA haya seguido trabajando desde entonces.")));
 
 // viewTask: one task as an audit trail — what the AI said (notes) interleaved with what it did (actions).
 function viewTask(machine, id) {
   const url = "/api/work?" + q({ machine, id });
   const c = S.cache[url];
-  const live = !c?.data || c.data.task?.status === "running";
-  load(url, live ? 4000 : 60000);
+  const live = !c?.data || (c.data.task?.status === "running" && !c.data.stale);
+  load(url, live ? 4000 : c?.data?.stale ? 15000 : 60000);
   const crumbs = $("div", { class: "crumbs" }, $("a", { href: "#/tareas" }, "Tareas"), icon("chev"),
     $("a", { href: machineHref(machine, "work") }, machine), icon("chev"), c?.data?.task?.title || id);
   if (!c?.t) return [crumbs, $("div", { class: "card empty" }, "Cargando la tarea…")];
   if (c.err && !c.data) return [crumbs, $("div", { class: "callout t-bad" }, icon("alert"),
     $("div", {}, $("b", {}, "No se pudo abrir la tarea"), $("p", {}, workErr(c.err))))];
   const t = c.data.task || {}, actions = c.data.actions || [];
-  const [tone] = workState(t.status);
+  const [tone] = taskState(t);
   const f = fraction(t.progress);
   const fails = actions.filter(a => !a.ok).length;
 
   const head = $("div", { class: "page-head" },
     $("div", {}, $("h1", {}, t.title || "(sin título)"),
-      $("div", { class: "sub" }, workChip(t.status),
+      $("div", { class: "sub" }, workChip(t),
         $("a", { href: machineHref(machine) }, machine),
-        $("span", { class: "muted" }, "· empezó " + when(t.started) + (t.ended ? " · terminó " + when(t.ended) : " · última actividad " + when(t.last_activity))))));
+        $("span", { class: "muted" }, "· empezó " + when(t.started) + (t.ended ? " · terminó " + when(t.ended) : " · última actividad " + when(t.last_activity))))),
+    liveRunning(t) ? $("div", { class: "actions" },
+      confirmable("cancel:" + machine + "/" + id, { label: "Cancelar tarea", confirm: "Sí, la IA dejará esta tarea", icon: "stop", cls: "danger", run: () => cancelTask(machine, id, url) })) : null);
+  const cancelHint = S.pending === "cancel:" + machine + "/" + id ? $("div", { class: "callout sm t-warn", style: "margin:-8px 0 18px" }, icon("info"),
+    $("div", {}, $("p", {}, "No cierra ningún programa: la tarea queda cerrada y, si la IA intenta seguir con ella, Astrea se lo impide. Para continuar tendría que abrir otra."))) : null;
 
   const outcome = t.summary || WORK_HINT[t.status] ? $("div", { class: "callout t-" + tone }, icon(workState(t.status)[2]),
     $("div", {}, $("b", {}, t.status === "running" ? "Resumen hasta ahora" : "Cómo terminó"), $("p", {}, t.summary || WORK_HINT[t.status]))) : null;
@@ -992,7 +1015,7 @@ function viewTask(machine, id) {
     ...actions.map(a => ({ k: "act", ts: a.ts, a }))];
   if (t.ended) ev.push({ k: "edge", ts: t.ended, title: workState(t.status)[1] });
   ev.sort((x, y) => Date.parse(x.ts) - Date.parse(y.ts));
-  if (t.status === "running") ev.push({ k: "edge", ts: new Date().toISOString(), title: "Sigue en curso · última actividad " + ago((Date.now() - Date.parse(t.last_activity)) / 1000) });
+  if (liveRunning(t)) ev.push({ k: "edge", ts: new Date().toISOString(), title: "Sigue en curso · última actividad " + ago((Date.now() - Date.parse(t.last_activity)) / 1000) });
   const rows = ev.filter(e => !S.taskOnlyErrors || (e.k === "act" && !e.a.ok)).map(e => {
     if (e.k === "edge") return $("div", { class: "li edge" }, $("span", { class: "when" }, when(e.ts)),
       $("span", { class: "mark" }, icon(e === ev[0] ? "play" : workState(t.status)[2])), $("div", { class: "what" }, $("b", {}, e.title)));
@@ -1008,12 +1031,12 @@ function viewTask(machine, id) {
       a.ok ? null : chip("bad", "Falló"));
   });
 
-  return [crumbs, head,
+  return [crumbs, head, cancelHint, c.data.stale ? staleNote(t) : null,
     t.detail ? $("p", { class: "task-desc" }, t.detail) : null,
     outcome,
     $("div", { class: "kpis" },
       kpiTile("Progreso", t.progress || "—", null, f != null ? Math.round(f) + "% completado" : t.status === "running" ? "La IA no ha dado un número" : "", "tasks"),
-      kpiTile(t.status === "running" ? "Lleva" : "Duró", taskDur(t), null, "desde " + when(t.started), "activity"),
+      kpiTile(liveRunning(t) ? "Lleva" : t.status === "running" ? "Llevaba" : "Duró", taskDur(t), null, "desde " + when(t.started), "activity"),
       kpiTile("Acciones", t.actions ?? actions.length, null, "Cambios que hizo en el equipo", "bolt"),
       kpiTile("Errores", t.errors ?? fails, null, (t.errors ?? fails) ? "Acciones que fallaron" : "Ninguna falló", "alert")),
     $("h2", { class: "section" }, "Paso a paso", $("span", { class: "count" }, plural(actions.length, "acción", "acciones") + (t.notes?.length ? " · " + plural(t.notes.length, "nota", "notas") : ""))),

@@ -168,8 +168,8 @@ Persisten entre reinicios. Ejemplos completos en [`docs/TASKS.md`](docs/TASKS.md
 Toda acción que cambia algo en una PC (exec, archivos, ratón/teclado, jobs,
 servicios…) lleva un argumento `work` que dice a qué tarea pertenece:
 
-- `{"title": "Generar 5 vídeos con MiniMax", "detail": "para la campaña"}` abre
-  una tarea nueva en esa PC (y cierra la anterior);
+- `{"title": "Instalar y configurar Blender", "detail": "para el render de mañana"}`
+  abre una tarea nueva (cualquier trabajo: un programa, unos tests, una build…) en esa PC (y cierra la anterior);
 - `"continue"`: es parte de la tarea que ya está abierta allí.
 
 Sin `work` el hub no la deja pasar. Mirar (estadísticas, pantalla, leer
