@@ -352,6 +352,20 @@
   .task-link span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .input.sel { width: auto; padding: 6px 10px; font-size: 13px; }
 
+  /* fleet notices (avisos): the text already carries its emoji; the tone is a bar on the left */
+  .feed .li { align-items: flex-start; gap: 10px; }
+  .feed .li::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--tone); }
+  .feed .when { width: 78px; flex: none; white-space: nowrap; color: var(--text-3); font-size: 12px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .feed .what { min-width: 0; flex: 1; }
+  .feed .what p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .feed .what .meta { color: var(--text-3); font-size: 12px; margin-top: 3px; display: flex; flex-wrap: wrap; gap: 0 10px; }
+  .feed .li.new { background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
+  .feed .li.new .when { color: var(--primary); font-weight: 600; }
+  .mcard .notice { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--text-2); margin-top: -4px; }
+  .mcard .notice span:first-of-type { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mcard .notice .ago { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .nav-item .badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+
   @keyframes fade { from { opacity: 0; } }
   @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -409,6 +423,7 @@
   <symbol id="i-xc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></symbol>
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 9h13M14.5 5.5 18 9l-3.5 3.5M19 15H6M9.5 11.5 6 15l3.5 3.5"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5v9a1.5 1.5 0 0 1-1.5 1.5H11l-4 4v-4h-.5A1.5 1.5 0 0 1 5 14.5z"/><path d="M8.5 8.5h7M8.5 11.5h4.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
   <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/></symbol>
 </svg>
 
@@ -417,6 +432,7 @@
     <a class="brand" href="#/"><img src="favicon.svg" alt="">Astrea</a>
     <a class="nav-item" href="#/" data-route="overview"><svg class="icon"><use href="#i-grid"/></svg>Resumen</a>
     <a class="nav-item" href="#/tareas" data-route="tasks"><svg class="icon"><use href="#i-tasks"/></svg>Tareas<span class="end tnum" id="navTasks"></span></a>
+    <a class="nav-item" href="#/avisos" data-route="events"><svg class="icon"><use href="#i-bell"/></svg>Avisos<span id="navEvents"></span></a>
     <div class="nav-label">Equipos</div>
     <nav id="navMachines"></nav>
     <div class="nav-label">Ayuda</div>
@@ -482,6 +498,10 @@ const S = {
   taskFilter: "all", // tasks view: all | running | problems
   taskMachine: "",  // tasks view: "" = whole fleet
   taskOnlyErrors: false, // task detail: show only the failed actions
+  ev: { list: [], last: 0, loaded: false, err: null, status: 0 }, // /api/events, oldest first
+  evSeen: +localStorage.getItem("astrea.evSeen") || 0, // highest seq the user has looked at
+  evOpenSeen: null, // evSeen when the notices view was opened: newer rows are highlighted
+  evMachine: "",    // notices view: "" = whole fleet
 };
 
 /* ---------- tiny DOM helpers ---------- */
@@ -618,6 +638,7 @@ function route() {
     return { name: "machine", id, tab: TAB_IDS[tab] || "perf" };
   }
   if (h === "/ayuda") return { name: "help" };
+  if (h === "/avisos") return { name: "events" };
   return { name: "overview" };
 }
 const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["work", "Tareas", "tareas"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
@@ -1048,6 +1069,79 @@ function viewTask(machine, id) {
   ];
 }
 
+/* ---------- fleet notices (avisos) ---------- */
+// The panel keeps the last 300 in memory (lost when it restarts) and long-polls them out:
+// GET /api/events once, then ?since=last&wait=60 forever. Seqs start at the clock, so they keep growing across restarts.
+const LEVEL = { good: "good", info: "primary", warn: "warn", bad: "bad" };
+const evTone = e => LEVEL[e.level] || "neutral";
+const evAgo = e => Date.now() - e.time < 864e5 ? ago((Date.now() - e.time) / 1000) : when(e.time);
+const unseen = e => e.seq > S.evSeen;
+function markSeen() {
+  if (S.ev.last <= S.evSeen) return;
+  S.evSeen = S.ev.last;
+  localStorage.setItem("astrea.evSeen", String(S.evSeen));
+}
+const lastEvent = key => S.ev.list.findLast(e => e.machine === key);
+async function pollEvents() {
+  for (;;) {
+    try {
+      const r = await fetch("/api/events" + (S.ev.loaded ? "?" + q({ since: S.ev.last, wait: 60 }) : ""), { cache: "no-store" });
+      if (r.status === 404) { S.ev.status = 404; S.ev.loaded = true; draw(); return; } // panel older than v0.5
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      const fresh = (j.events || []).filter(e => e.seq > S.ev.last);
+      S.ev.list = S.ev.list.concat(fresh).slice(-300);
+      S.ev.last = Math.max(S.ev.last, j.last || 0);
+      if (!S.ev.loaded && !localStorage.getItem("astrea.evSeen")) markSeen(); // first visit ever: nothing is "new"
+      S.ev.loaded = true; S.ev.err = null;
+      if (fresh.length || S.ev.list.length === 0) { if (holdDraw()) drawSidebar(); else draw(); }
+    } catch (e) {
+      S.ev.err = e.message;
+      await new Promise(res => setTimeout(res, 5000));
+    }
+  }
+}
+
+function viewEvents(list) {
+  const all = S.ev.list;
+  const machines = [...new Set([...list.map(keyOf), ...all.map(e => e.machine).filter(Boolean)])];
+  const shown = all.filter(e => !S.evMachine || e.machine === S.evMachine).reverse();
+  const head = $("div", { class: "page-head" },
+    $("div", {}, $("h1", {}, "Avisos"),
+      $("div", { class: "sub" }, "Lo que pasa en la flota mientras no miras: equipos que se apagan, trabajos que terminan, alguien que se sienta delante.")));
+  if (S.ev.status === 404) return [head, $("div", { class: "callout t-warn" }, icon("alert"),
+    $("div", {}, $("b", {}, "Este panel no tiene avisos"), $("p", {}, "Es anterior a la v0.5: actualízalo para verlos aquí.")))];
+  if (!S.ev.loaded) return [head, $("div", { class: "card empty" }, S.ev.err ? "No se pudieron leer los avisos: " + S.ev.err : "Cargando los avisos…")];
+  const fresh = S.evOpenSeen ?? S.evSeen;
+  return [head,
+    $("div", { class: "toolbar" },
+      $("span", { class: "muted" }, all.length ? plural(shown.length, "aviso", "avisos") : ""),
+      $("span", { class: "spacer" }),
+      machines.length > 1 ? $("select", { class: "input sel", "aria-label": "Equipo", onchange: e => { S.evMachine = e.target.value; draw(); } },
+        $("option", { value: "" }, "Todos los equipos"),
+        machines.map(m => $("option", { value: m, selected: S.evMachine === m || null }, m))) : null),
+    shown.length
+      ? $("div", { class: "list feed" }, shown.map(e => $("div", { class: "li t-" + evTone(e) + (e.seq > fresh ? " new" : "") },
+          $("span", { class: "when", title: new Date(e.time).toLocaleString() }, evAgo(e)),
+          $("div", { class: "what" }, $("p", {}, e.text),
+            e.machine ? $("div", { class: "meta" }, $("a", { href: machineHref(e.machine) }, e.machine)) : null))))
+      : $("div", { class: "card empty" }, $("h2", {}, all.length ? "Nada de este equipo" : "Sin avisos todavía"),
+          $("p", {}, all.length ? "Este equipo no ha avisado de nada desde que arrancó el panel."
+            : "Aquí aparecerá cuando un equipo se encienda o se apague, termine un trabajo o una descarga, se caiga un servicio o alguien se siente delante.")),
+    $("div", { class: "list-foot" }, "Se actualiza solo. El panel guarda los últimos 300 y los olvida al reiniciarse; los mismos avisos llegan a Telegram y a Hermes."),
+  ];
+}
+
+// noticeLine: the machine card's last notice; the dot pulses while it's unread.
+function noticeLine(key) {
+  const e = lastEvent(key);
+  if (!e) return null;
+  const text = e.text.split("\n")[0];
+  return $("div", { class: "notice", title: e.text },
+    $("span", { class: "dot t-" + evTone(e) + (unseen(e) ? " pulse" : ""), "aria-label": unseen(e) ? "Aviso nuevo" : null }),
+    $("span", {}, text), $("span", { class: "ago" }, evAgo(e)));
+}
+
 /* ---------- service logs viewer ---------- */
 const logs = document.getElementById("logs");
 let logsTarget = null;
@@ -1082,6 +1176,8 @@ function drawSidebar() {
   nt.textContent = running ? String(running) : "";
   nt.title = running ? plural(running, "tarea en curso", "tareas en curso") : "";
   if (r.name === "task") document.querySelector('[data-route="tasks"]').setAttribute("aria-current", "page");
+  const nUnseen = r.name === "events" ? 0 : S.ev.list.filter(unseen).length;
+  document.getElementById("navEvents").replaceChildren(...(nUnseen ? [$("span", { class: "badge tnum", title: plural(nUnseen, "aviso nuevo", "avisos nuevos") }, nUnseen > 99 ? "99+" : String(nUnseen))] : []));
   const nav = document.getElementById("navMachines");
   const list = S.list || [];
   nav.replaceChildren(...(list.length ? list.map((m, idx) => {
@@ -1141,6 +1237,7 @@ function machineCard(m, idx) {
           (g.u != null || g.v != null) ? row(g.u != null ? "GPU" : "VRAM", g.u != null ? g.u : g.v) : null)
       : $("div", { class: "off-msg" }, m.online ? "Esperando datos…" : p.detail),
     m.online ? workStrip(m.admin?.work) : null,
+    noticeLine(key),
     $("div", { class: "bottom" },
       chip(p.tone, p.label),
       m.online ? modeChip(m.admin) : null,
@@ -1438,19 +1535,21 @@ function viewHelp() {
 
 /* ---------- draw ---------- */
 function draw() {
+  const r = route();
+  if (r.name === "events") { S.evOpenSeen ??= S.evSeen; markSeen(); } else S.evOpenSeen = null;
   drawSidebar();
   const view = document.getElementById("view");
-  const r = route();
   let content;
   if (r.name === "help") content = viewHelp();
   else if (S.list == null) content = [$("div", { class: "empty" }, S.ok ? "Conectando con los equipos…" : "El panel no responde: " + S.err)];
   else if (r.name === "machine") content = viewMachine(S.list, r.id);
   else if (r.name === "tasks") content = viewTasks(S.list);
   else if (r.name === "task") content = viewTask(r.machine, r.id);
+  else if (r.name === "events") content = viewEvents(S.list);
   else content = viewOverview(S.list);
   view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
   document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea"
-    : r.name === "tasks" ? "Tareas — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
+    : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
 }
 
 /* ---------- screen viewer ---------- */
@@ -1535,6 +1634,7 @@ async function loop() {
 loadVersion().then(draw);
 setInterval(loadVersion, 5 * 60 * 1000);
 loop();
+pollEvents();
 </script>
 </body>
 </html>

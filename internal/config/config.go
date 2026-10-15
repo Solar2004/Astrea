@@ -47,6 +47,7 @@ var ReadOnlyAllow = []string{
 	"fs.list", "fs.read", "sys.*", "proc.list", "screen.capture",
 	"task.list", "task.get", "endpoint.list", "deps.check",
 	"service.status", "service.logs", "job.status", "job.logs",
+	"net.download.status", "memory.get",
 }
 
 // EffectiveAllow returns the allow list after applying Mode. An unknown mode
