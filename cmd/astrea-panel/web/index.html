@@ -1512,7 +1512,12 @@ window.addEventListener("hashchange", () => {
 
 /* ---------- polling ---------- */
 // Don't rebuild the view under the cursor (chart tooltip) or under a form being filled.
-const holdDraw = () => !!(document.querySelector(".spark svg:hover") || route().name === "help" ||
+// Nor mid-click: replacing the button between mousedown and mouseup swallows the click.
+let pressing = false;
+addEventListener("pointerdown", () => { pressing = true; }, true);
+addEventListener("pointerup", () => { pressing = false; }, true);
+addEventListener("pointercancel", () => { pressing = false; }, true);
+const holdDraw = () => !!(pressing || document.querySelector(".spark svg:hover") || route().name === "help" ||
                           document.activeElement?.matches?.("input, textarea, select"));
 async function loop() {
   try {

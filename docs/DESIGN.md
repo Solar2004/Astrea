@@ -118,6 +118,8 @@ en el móvil.
 | `GET /api/work?limit=` | *Tareas*: KPIs, filtros (todas / en curso / con problemas, por equipo), historial por día; cada 8 s |
 | `GET /api/work?machine=` | Pestaña *Tareas* del equipo; títulos de los enlaces “tarea” en *Actividad* (`audit[].work`) |
 | `GET /api/work?machine=&id=` | Detalle: notas de la IA y acciones reales intercaladas por hora; cada 4 s si sigue en curso |
+| `stale:true` + `cached_at` en `/api/work*` | Copia guardada de una PC que no responde: “Sin conexión · visto HH:MM”, aviso ámbar; una `running` stale se muestra **Estaba en curso** y no cuenta como en curso |
+| `POST /api/work/cancel?machine=&id=` | Detalle › *Cancelar tarea* (solo en curso y con la PC conectada); confirmación “Sí, la IA dejará esta tarea” + aviso de que no cierra programas |
 
 Cada pestaña tiene URL propia: `#/m/NOMBRE/rendimiento|servicios|tareas|actividad|sistema`.
 La pestaña *Actividad* oculta por defecto las consultas que hace el propio panel
