@@ -85,11 +85,11 @@ func (s *Store) Forget(id string) error {
 	return s.save()
 }
 
-// Notes returns all notes, oldest first.
+// Notes returns all notes, oldest first (never nil: [] in JSON).
 func (s *Store) Notes() []Note {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return slices.Clone(s.notes)
+	return append([]Note{}, s.notes...)
 }
 
 func (s *Store) save() error {
