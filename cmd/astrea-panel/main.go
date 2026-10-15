@@ -129,6 +129,7 @@ func main() {
 	mux.HandleFunc("/api/live", p.handleLive)
 	mux.HandleFunc("/api/control", p.handleControl)
 	mux.HandleFunc("/api/input", p.handleInput)
+	mux.HandleFunc("/api/memory", p.handleMemory)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {

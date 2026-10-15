@@ -121,8 +121,8 @@ make test       # tests
 | `astrea.fs.list/read/write` | Listar, leer y escribir archivos (texto o base64)    |
 | `astrea.sys.info`     | OS, plataforma, uptime, memoria                            |
 | `astrea.proc.list/kill` | Listar y matar procesos                                  |
-| `astrea.mouse.move/click` | Mover y hacer clic con el mouse                        |
-| `astrea.key.type`     | Escribir texto por teclado                                 |
+| `astrea.mouse.move/click/button/scroll` | Mover, clic, pulsar/soltar (arrastrar) y rueda |
+| `astrea.key.type/press` | Escribir texto; teclas y combinaciones (`ctrl+c`, `alt+tab`, `win+r`) |
 | `astrea.screen.capture` | Captura de pantalla — la IA la recibe como imagen        |
 | `astrea.service.start/stop/status/logs` | Servidores supervisados (ollama, llama-server, ComfyUI): reinicio, autoarranque, `expose` a `/dyn` |
 | `astrea.job.start/status/logs/cancel` | Tareas largas en segundo plano (instalar torch, convertir modelos) |
@@ -134,7 +134,9 @@ make test       # tests
 | `astrea.work.start/update/end/list/get` | La IA declara qué está haciendo en cada PC; lista de tareas con sus acciones (auditoría) |
 | `astrea.admin.lock/status/stop` | Kill switch y control del agente                 |
 | `astrea.agent.update/restart` | Actualizar el agente a la última release (verificada) y reiniciarlo |
+| `astrea.memory.get/note/forget` | Memoria de cada PC: qué tiene instalado, notas y tareas recientes |
 | `astrea.fleet.status` | (hub) Resumen de todas las PCs: online, CPU/RAM, GPUs con VRAM libre, quién está activo, servicios |
+| `astrea.fleet.events` | (hub) Avisos de la flota; con `wait_sec` espera al siguiente |
 
 ### Endpoints dinámicos — el diferenciador
 
@@ -180,6 +182,31 @@ Cada acción queda en la auditoría con el id de su tarea, así que lo que ves e
 lo que **se hizo**, no lo que la IA dice que hizo. Se ve en el panel, en
 `fleet.status` y en Telegram (`/tareas`, la tarjeta de cada PC y un aviso al
 terminar o fallar). API del panel: `GET /api/work[?machine=&id=]`.
+
+### Avisos — las PCs avisan
+
+El panel vigila la flota y registra cada cambio: tarea, job o descarga
+terminados o fallidos, servicio caído, PC encendida/apagada, freno, alguien se
+sentó / quedó libre, GPU caliente, disco lleno. Llegan a Telegram, al panel
+(`GET /api/events?since=&wait=`), a la IA (`astrea.fleet.events`) y, con
+`hermes.json` junto a `machines.json`, despiertan a Hermes por su webhook:
+
+```json
+{"url": "http://127.0.0.1:8644/webhooks/astrea", "secret": "…"}
+```
+
+### Ventana en vivo
+
+En el panel ves la pantalla de cada PC en tiempo real y puedes tomar el ratón y
+el teclado. Mientras tienes el control, la IA no puede usarlos en esa PC
+(se le dice claramente); al soltarlo, o si cierras el panel, vuelve a poder.
+
+### Memoria por PC
+
+Cada PC recuerda lo que tiene (sistema, GPU, discos, herramientas, programas,
+servicios), las notas que dejan la IA o tú ("ComfyUI está en D:\ComfyUI") y sus
+últimas tareas. Cuando la IA abre una tarea en una PC, recibe ese resumen sin
+pedirlo. Las notas se editan en el panel.
 
 ## Varias PCs — una flota
 

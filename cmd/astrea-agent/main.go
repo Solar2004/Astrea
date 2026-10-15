@@ -26,6 +26,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/download"
 	"github.com/Solar2004/Astrea/internal/endpoint"
 	"github.com/Solar2004/Astrea/internal/guibridge"
+	"github.com/Solar2004/Astrea/internal/memory"
 	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
@@ -310,6 +311,8 @@ func run() *log.Logger {
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
 	capability.RegisterWork(reg, works, audit.Path())
+	// Memory: what this PC has and what was done here, handed to the AI when it starts a task.
+	capability.RegisterMemory(reg, &capability.Memory{Notes: memory.Open(filepath.Join(cfg.DataDir, "memory.json")), Works: works, Reg: reg})
 	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode, Extra: func() map[string]any {
 		m := upd.status()
 		if t, ok := works.Current(); ok {

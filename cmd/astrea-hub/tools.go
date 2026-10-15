@@ -215,7 +215,8 @@ var readOnly = map[string]bool{
 func needsWork(capName string) bool {
 	switch {
 	case readOnly[capName], strings.HasPrefix(capName, "work."),
-		strings.HasPrefix(capName, "admin."), strings.HasPrefix(capName, "agent."):
+		strings.HasPrefix(capName, "admin."), strings.HasPrefix(capName, "agent."),
+		strings.HasPrefix(capName, "memory."):
 		return false
 	}
 	return true
@@ -323,8 +324,30 @@ func (h *hub) handler(capName string) mcp.ToolHandler {
 		if err != nil {
 			return errorResult(fmt.Errorf("%s: %w", n.Name, err)), nil
 		}
-		return &mcp.CallToolResult{Content: render(res)}, nil
+		content := render(res)
+		if capName == "work.start" || bytes.HasPrefix(bytes.TrimSpace(workSpec), []byte("{")) {
+			content = append(content, h.memory(ctx, n)...)
+		}
+		return &mcp.CallToolResult{Content: content}, nil
 	}
+}
+
+// memory is what the AI should know about a machine when it opens a new task
+// there (memory.get summary); nothing if the agent is too old to have it.
+func (h *hub) memory(ctx context.Context, n *fleet.Node) []mcp.Content {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	res, err := n.Client.Call(ctx, "memory.get", json.RawMessage(`{}`))
+	if err != nil {
+		return nil
+	}
+	var m struct {
+		Summary string `json:"summary"`
+	}
+	if json.Unmarshal(res.Result, &m) != nil || m.Summary == "" {
+		return nil
+	}
+	return []mcp.Content{&mcp.TextContent{Text: "Memory of " + n.Name + " (what is there and what was done before):\n" + m.Summary}}
 }
 
 func errorResult(err error) *mcp.CallToolResult {

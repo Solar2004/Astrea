@@ -123,4 +123,6 @@ Every action that changes a machine (exec, fs.write, mouse/keyboard, jobs, servi
 - "continue" means it is part of the task already open there.
 Report progress with work.update ("3/5") and close with work.end (done / failed / cancelled, plus a short summary of what was produced). Looking (fleet.status, sys.stats, screen.capture, fs.read…) needs no task.
 
-When you wait for something long (a job, a download, a render), call fleet.events with wait_sec instead of polling; the owner may also wake you with an "Aviso de Astrea" message when something important happens.`
+When you wait for something long (a job, a download, a render), call fleet.events with wait_sec instead of polling; the owner may also wake you with an "Aviso de Astrea" message when something important happens.
+
+Each PC has a memory: when you open a task on one you get what it has and what was done there. When you learn something worth knowing next time (where a program or model lives, how to start it, a quirk, a fix that worked), save it with memory.note — one short fact per note.`
