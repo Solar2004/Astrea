@@ -73,6 +73,7 @@ type panel struct {
 	latest   latestCache
 	lastSeen map[string]int64 // machine name → unix ms of the last answer
 	editMu   sync.Mutex       // serializes edits of the machines file
+	hist     historyStore     // CPU/RAM/GPU over the last 2 h (history.go)
 }
 
 func main() {
@@ -91,13 +92,14 @@ func main() {
 
 	logger := log.New(os.Stderr, "astrea-panel ", log.LstdFlags)
 
-	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}}
+	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}, hist: historyStore{rings: map[string]*ring{}}}
 	// Load once now (for the startup log), but the stats handler reloads on
 	// every request, so adding machines to panel.json needs no restart and an
 	// empty/missing config is not fatal — the panel just shows nothing yet.
 	if n := len(p.reload()); n == 0 {
 		logger.Printf("no machines yet (add them to %s; the panel picks them up live)", *cfgPath)
 	}
+	go p.sampleLoop(context.Background())
 	startTelegram(p, telegramConfigPath(*cfgPath), logger)
 
 	// Go does not know .webmanifest; browsers want this type for the PWA.
@@ -110,6 +112,7 @@ func main() {
 	mux.HandleFunc("/api/version", p.handleVersion)
 	mux.HandleFunc("/api/update", p.handleUpdate)
 	mux.HandleFunc("/api/lock", p.handleLock)
+	mux.HandleFunc("/api/history", p.handleHistory)
 	mux.HandleFunc("/api/machines", p.handleMachines)
 	mux.HandleFunc("/api/audit", p.handleAudit)
 	mux.HandleFunc("/api/service", p.handleService)

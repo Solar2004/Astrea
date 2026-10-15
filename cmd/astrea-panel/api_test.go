@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseCard(t *testing.T) {
 	const tok = "e1bb0c37a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a225f"
@@ -36,5 +39,16 @@ astrea-panel --ws ws://100.81.60.38:7700/ws --token ` + tok, "", "ws://100.81.60
 func TestCleanName(t *testing.T) {
 	if got := cleanName("DESKTOP AJGOOT0.local"); got != "DESKTOP-AJGOOT0-local" {
 		t.Fatal(got)
+	}
+}
+
+func TestRingWrapsOldestFirst(t *testing.T) {
+	var r ring
+	for i := 0; i < historyLen+5; i++ {
+		r.add(float64(i), 0, -1, time.Unix(int64(i), 0))
+	}
+	h := r.snapshot()
+	if len(h.CPU) != historyLen || h.CPU[0] != 5 || h.CPU[historyLen-1] != float64(historyLen+4) {
+		t.Fatalf("len %d first %v last %v", len(h.CPU), h.CPU[0], h.CPU[len(h.CPU)-1])
 	}
 }
