@@ -8,6 +8,7 @@ package security
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,43 @@ func (a *Audit) Log(method string, args json.RawMessage, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.f.Write(append(data, '\n'))
+}
+
+// Path is the audit file location ("" if disabled).
+func (a *Audit) Path() string {
+	if a == nil || a.f == nil {
+		return ""
+	}
+	return a.f.Name()
+}
+
+// ReadAudit returns the last limit entries of the audit log at path, newest
+// first. It reads at most the final 4 MiB, so a huge log stays cheap.
+func ReadAudit(path string, limit int) ([]Entry, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	const window = 4 << 20
+	if st, err := f.Stat(); err == nil && st.Size() > window {
+		if _, err := f.Seek(st.Size()-window, io.SeekStart); err != nil {
+			return nil, err
+		}
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	var out []Entry
+	for i := len(lines) - 1; i >= 0 && len(out) < limit; i-- {
+		var e Entry
+		if json.Unmarshal([]byte(lines[i]), &e) == nil && e.Method != "" {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 // Close closes the audit file.

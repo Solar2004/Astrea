@@ -604,6 +604,9 @@ function Write-Summary([string]$ip, [string]$token) {
 
 # 2) Panel de recursos (CPU / RAM / grafica):
 astrea-panel --ws ws://${ip}:$Port/ws --token $token
+
+# 3) Lo mas facil: pega esta ficha entera en el panel (Anadir un equipo), o:
+install.sh add-machine $($env:COMPUTERNAME) ${ip} $token
 "@
   [IO.File]::WriteAllText($HubCfgPath, $hub, (New-Object Text.UTF8Encoding $false))
   Write-Host ""

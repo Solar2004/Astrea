@@ -90,3 +90,44 @@ func (a AdminStop) Invoke(_ context.Context, _ json.RawMessage, _ Emit) (any, er
 	}()
 	return map[string]any{"stopping": true}, nil
 }
+
+// AdminAudit reads the agent's audit log: what the AI (or anyone with the
+// token) has done on this machine, newest first.
+type AdminAudit struct{ Path string }
+
+func (AdminAudit) Name() string { return "admin.audit" }
+
+func (AdminAudit) Describe() Descriptor {
+	return Descriptor{
+		Name:        "admin.audit",
+		Description: "Recent activity on this machine from the audit log, newest first: time, method, ok/error and (truncated) arguments.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {"limit": {"type": "integer", "description": "max entries (default 100, max 1000)"}}
+		}`),
+	}
+}
+
+func (a AdminAudit) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
+	var req struct {
+		Limit int `json:"limit"`
+	}
+	_ = json.Unmarshal(payload, &req)
+	if req.Limit <= 0 {
+		req.Limit = 100
+	}
+	if req.Limit > 1000 {
+		req.Limit = 1000
+	}
+	if a.Path == "" {
+		return map[string]any{"entries": []security.Entry{}, "note": "audit log disabled"}, nil
+	}
+	entries, err := security.ReadAudit(a.Path, req.Limit)
+	if err != nil {
+		return nil, err
+	}
+	if entries == nil {
+		entries = []security.Entry{}
+	}
+	return map[string]any{"entries": entries}, nil
+}

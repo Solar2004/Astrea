@@ -397,11 +397,11 @@ func (b *telegramBot) statusText(onlyOnline bool) (string, any) {
 	for _, s := range out {
 		if !s.Online {
 			if !onlyOnline {
-				fmt.Fprintf(&sb, "\n🔴 <b>%s</b> — apagada", esc(s.Name))
+				fmt.Fprintf(&sb, "\n%s · <b>%s</b>", badge(s), esc(s.Name))
 			}
 			continue
 		}
-		fmt.Fprintf(&sb, "\n🟢 <b>%s</b>%s", esc(s.Name), statsLine(s))
+		fmt.Fprintf(&sb, "\n%s · <b>%s</b>%s", badge(s), esc(s.Name), statsLine(s))
 	}
 	if onlyOnline && on == 0 {
 		sb.WriteString("\nNinguna encendida ahora mismo.")
@@ -437,7 +437,7 @@ func (b *telegramBot) machineText(name string) string {
 	}
 	s := b.p.poll(context.Background(), *m)
 	if !s.Online {
-		return fmt.Sprintf("🔴 <b>%s</b> está apagada o sin conexión.", esc(name))
+		return fmt.Sprintf("🔴 Sin conexión · <b>%s</b> está apagada o fuera del tailnet.", esc(name))
 	}
 
 	var st struct {
@@ -491,12 +491,9 @@ func (b *telegramBot) machineText(name string) string {
 	_ = json.Unmarshal(s.Admin, &admin)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "🟢 <b>%s</b>", esc(name))
+	fmt.Fprintf(&sb, "<b>%s</b> · %s", esc(name), badge(s))
 	if admin.Mode != "" {
 		fmt.Fprintf(&sb, " · modo %s", esc(admin.Mode))
-	}
-	if admin.Locked {
-		sb.WriteString(" · 🔒 bloqueada")
 	}
 	if s.Stats != nil && json.Unmarshal(s.Stats, &st) == nil {
 		fmt.Fprintf(&sb, "\n%s %s · encendida hace %s",
@@ -525,12 +522,12 @@ func (b *telegramBot) machineText(name string) string {
 	}
 	if s.Idle != nil && json.Unmarshal(s.Idle, &idle) == nil {
 		if idle.UserActive {
-			fmt.Fprintf(&sb, "\n\n👤 <b>En uso</b>")
+			fmt.Fprintf(&sb, "\n\n🟡 <b>En uso</b>")
 			if idle.Foreground != "" || idle.Process != "" {
 				fmt.Fprintf(&sb, " — %s (%s)", esc(idle.Foreground), esc(idle.Process))
 			}
 		} else {
-			fmt.Fprintf(&sb, "\n\n💤 Libre (sin actividad hace %s)", ago(time.Duration(idle.IdleSec)*time.Second))
+			fmt.Fprintf(&sb, "\n\n🟢 Libre (sin actividad hace %s)", ago(time.Duration(idle.IdleSec)*time.Second))
 		}
 	}
 	if s.Services != nil && json.Unmarshal(s.Services, &svc) == nil && len(svc.Services) > 0 {
@@ -544,6 +541,27 @@ func (b *telegramBot) machineText(name string) string {
 
 func gb(n uint64) string {
 	return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+}
+
+// badge es el estado de una PC con el mismo vocabulario y emojis que el
+// panel web: 🟢 Libre · 🟡 En uso · 🔴 Sin conexión · 🔒 Bloqueada.
+func badge(s machineStatus) string {
+	if !s.Online {
+		return "🔴 Sin conexión"
+	}
+	var admin struct {
+		Locked bool `json:"locked"`
+	}
+	if json.Unmarshal(s.Admin, &admin) == nil && admin.Locked {
+		return "🔒 Bloqueada"
+	}
+	var idle struct {
+		UserActive bool `json:"user_active"`
+	}
+	if s.Idle != nil && json.Unmarshal(s.Idle, &idle) == nil && idle.UserActive {
+		return "🟡 En uso"
+	}
+	return "🟢 Libre"
 }
 
 // statsLine resume CPU/RAM y si alguien está usando la PC.
@@ -566,14 +584,8 @@ func statsLine(s machineStatus) string {
 		parts = append(parts, fmt.Sprintf("CPU %.0f%% · RAM %.0f%%", st.CPU.UsagePercent, st.Memory.UsedPercent))
 	}
 	if json.Unmarshal(s.Idle, &idle) == nil && s.Idle != nil {
-		if idle.UserActive {
-			who := "en uso"
-			if idle.Process != "" {
-				who += " (" + idle.Process + ")"
-			}
-			parts = append(parts, who)
-		} else {
-			parts = append(parts, "libre")
+		if idle.UserActive && idle.Process != "" {
+			parts = append(parts, idle.Process)
 		}
 	}
 	if len(parts) == 0 {

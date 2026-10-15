@@ -296,6 +296,7 @@ func run() *log.Logger {
 	reg.Register(capability.AdminLock{Guard: guard})
 	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode, Extra: upd.status})
 	reg.Register(capability.AdminStop{Stop: stop})
+	reg.Register(capability.AdminAudit{Path: audit.Path()})
 
 	tok := auth.New(cfg.Token)
 	if !tok.Enabled() {

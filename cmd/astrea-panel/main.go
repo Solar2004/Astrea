@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -56,9 +57,10 @@ type machineStatus struct {
 	Online   bool            `json:"online"`
 	Error    string          `json:"error,omitempty"`
 	Stats    json.RawMessage `json:"stats,omitempty"`
-	Idle     json.RawMessage `json:"idle,omitempty"`     // sys.idle: quién usa la PC
-	Services json.RawMessage `json:"services,omitempty"` // service.status: servicios/modelos
-	Admin    json.RawMessage `json:"admin,omitempty"`    // admin.status: os, modo, kill switch
+	Idle     json.RawMessage `json:"idle,omitempty"`      // sys.idle: quién usa la PC
+	Services json.RawMessage `json:"services,omitempty"`  // service.status: servicios/modelos
+	Admin    json.RawMessage `json:"admin,omitempty"`     // admin.status: os, modo, kill switch
+	LastSeen int64           `json:"last_seen,omitempty"` // unix ms de la última respuesta
 }
 
 type panel struct {
@@ -69,6 +71,8 @@ type panel struct {
 	machines []Machine
 	clients  map[string]*transport.ReconnectingClient // keyed by ws URL, reused across reloads
 	latest   latestCache
+	lastSeen map[string]int64 // machine name → unix ms of the last answer
+	editMu   sync.Mutex       // serializes edits of the machines file
 }
 
 func main() {
@@ -87,7 +91,7 @@ func main() {
 
 	logger := log.New(os.Stderr, "astrea-panel ", log.LstdFlags)
 
-	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}}
+	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}}
 	// Load once now (for the startup log), but the stats handler reloads on
 	// every request, so adding machines to panel.json needs no restart and an
 	// empty/missing config is not fatal — the panel just shows nothing yet.
@@ -96,6 +100,8 @@ func main() {
 	}
 	startTelegram(p, telegramConfigPath(*cfgPath), logger)
 
+	// Go does not know .webmanifest; browsers want this type for the PWA.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	static, _ := fs.Sub(webFS, "web")
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(static)))
@@ -103,6 +109,11 @@ func main() {
 	mux.HandleFunc("/api/screenshot", p.handleScreenshot)
 	mux.HandleFunc("/api/version", p.handleVersion)
 	mux.HandleFunc("/api/update", p.handleUpdate)
+	mux.HandleFunc("/api/lock", p.handleLock)
+	mux.HandleFunc("/api/machines", p.handleMachines)
+	mux.HandleFunc("/api/audit", p.handleAudit)
+	mux.HandleFunc("/api/service", p.handleService)
+	mux.HandleFunc("/api/service/logs", p.handleServiceLogs)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
@@ -185,6 +196,12 @@ func (p *panel) poll(ctx context.Context, m Machine) machineStatus {
 	defer cancel()
 	// admin.status is cheap and always present: it confirms the agent is alive.
 	admin, err := client.Call(ctx, "admin.status", map[string]any{})
+	p.mu.Lock()
+	if err == nil {
+		p.lastSeen[m.Name] = time.Now().UnixMilli()
+	}
+	st.LastSeen = p.lastSeen[m.Name]
+	p.mu.Unlock()
 	if err != nil {
 		st.Error = err.Error()
 		return st

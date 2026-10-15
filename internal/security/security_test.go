@@ -1,6 +1,11 @@
 package security
 
-import "testing"
+import (
+	"encoding/json"
+	"errors"
+	"path/filepath"
+	"testing"
+)
 
 func TestGuardAllowDeny(t *testing.T) {
 	g := NewGuard([]string{"exec", "fs.read"}, []string{"proc.kill"})
@@ -48,5 +53,24 @@ func TestGuardWildcards(t *testing.T) {
 	}
 	if err := g.Check("exec"); err == nil {
 		t.Fatal("exec is not covered by task.*")
+	}
+}
+
+func TestReadAuditNewestFirst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAudit(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Log("exec", json.RawMessage(`{"command":"ls"}`), nil)
+	a.Log("fs.read", nil, errors.New("boom"))
+	a.Log("sys.info", nil, nil)
+	a.Close()
+	got, err := ReadAudit(path, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Method != "sys.info" || got[1].Method != "fs.read" || got[1].OK || got[1].Err != "boom" {
+		t.Fatalf("got %+v", got)
 	}
 }
