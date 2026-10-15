@@ -131,6 +131,7 @@
     background: color-mix(in srgb, var(--tone, var(--text-3)) 14%, transparent);
   }
   .chip .dot { width: 6px; height: 6px; background: var(--tone, var(--text-3)); }
+  .chip .icon { width: 13px; height: 13px; stroke-width: 2.2; margin-left: -2px; }
 
   /* ---------- buttons ---------- */
   .btn {
@@ -361,6 +362,8 @@
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/></symbol>
 </svg>
 
@@ -453,6 +456,16 @@ function icon(name, cls = "") {
   u.setAttribute("href", "#i-" + name);
   s.append(u);
   return s;
+}
+// modeChip: the AI's permission level, always visible (the user asked to see "yolo" at a glance).
+function modeChip(admin, long = false) {
+  const mode = admin?.mode;
+  if (!mode) return null;
+  const ro = mode === "readonly";
+  const ic = icon(ro ? "eye" : "bolt");
+  return $("span", { class: "chip t-" + (ro ? "neutral" : "primary"),
+                     title: ro ? "Solo lectura: la IA puede mirar, pero no cambiar nada" : "Modo YOLO: la IA tiene control total del equipo" },
+    ic, ro ? "Solo lectura" : long ? "YOLO · control total" : "YOLO");
 }
 const chip = (tone, label, withDot = true) => $("span", { class: "chip t-" + tone }, withDot ? $("span", { class: "dot" }) : null, label);
 
@@ -826,6 +839,7 @@ function machineCard(m, idx) {
       : $("div", { class: "off-msg" }, m.online ? "Esperando datos…" : p.detail),
     $("div", { class: "bottom" },
       chip(p.tone, p.label),
+      m.online ? modeChip(m.admin) : null,
       m.online && p.detail ? $("span", { class: "muted" }, p.detail) : null,
       $("span", { class: "spacer" }),
       nSvc ? $("span", { class: "muted" }, nSvc + (nSvc === 1 ? " servicio" : " servicios")) : null,
@@ -989,7 +1003,7 @@ function tabSystem(m, s) {
     $("div", { class: "list-title" }, "Permisos de la IA"),
     $("div", { class: "list" },
       li("Nivel de control", a.mode === "readonly" ? "La IA puede mirar, pero no cambiar nada" : "La IA puede ejecutar, instalar y usar el ratón y el teclado",
-         a.mode ? chip(a.mode === "readonly" ? "neutral" : "primary", a.mode === "readonly" ? "Solo lectura" : "Control total", false) : "—"),
+         modeChip(a, true) || "—"),
       li("Freno de emergencia", "Si está activado, el agente rechaza cualquier orden",
          m.online ? $("span", { style: "display:inline-flex;gap:10px;align-items:center" },
            a.locked ? chip("bad", "Activado") : chip("good", "Desactivado"),
@@ -1027,7 +1041,7 @@ function viewMachine(list, id) {
     $("div", { class: "page-head" },
       $("div", {},
         $("h1", {}, title),
-        $("div", { class: "sub" }, chip(p.tone, p.label), p.detail ? $("span", {}, p.detail) : null,
+        $("div", { class: "sub" }, chip(p.tone, p.label), m.online ? modeChip(m.admin, true) : null, p.detail ? $("span", {}, p.detail) : null,
           s?.host?.uptime_sec != null && m.online ? $("span", { class: "muted" }, "· encendido hace " + uptime(s.host.uptime_sec)) : null)),
       $("div", { class: "actions" },
         needsUpdate(m) ? confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", run: () => updateAgent(key) }) : null,
@@ -1100,7 +1114,9 @@ function viewHelp() {
       term("good", "Libre", "Nadie está usando el equipo: tu IA puede trabajar en él sin molestar."),
       term("warn", "En uso", "Hay una persona delante. Mejor no mover el ratón ni ocupar la gráfica."),
       term("bad", "Sin conexión", "El equipo está apagado, sin internet o sin Tailscale."),
-      term("bad", "Bloqueada", "Se activó el freno de emergencia: el agente rechaza cualquier orden.")),
+      term("bad", "Bloqueada", "Se activó el freno de emergencia: el agente rechaza cualquier orden."),
+      $("div", { class: "li" }, modeChip({ mode: "yolo" }), $("div", { class: "v", style: "text-align:left;margin-left:4px" }, "La IA tiene control total: ejecuta, instala y usa el ratón y el teclado sin pedir permiso.")),
+      $("div", { class: "li" }, modeChip({ mode: "readonly" }), $("div", { class: "v", style: "text-align:left;margin-left:4px" }, "La IA solo puede mirar: no ejecuta ni cambia nada."))),
     $("div", { class: "list-foot" }, "¿Algo no funciona? Ejecuta astrea-agent --diagnose en el otro equipo; la salida no incluye la clave."),
   ];
 }

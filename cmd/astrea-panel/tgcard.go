@@ -317,6 +317,47 @@ func (c *canvas) chip(x, y int, tone, label string, size float64) int {
 	return w
 }
 
+// modeChip draws the AI permission level: a bolt + "YOLO" (primary) or
+// "Solo lectura" (neutral). Returns its width, 0 if the mode is unknown.
+func (c *canvas) modeChip(x, y int, mode string, size float64) int {
+	if mode == "" {
+		return 0
+	}
+	ro := mode == "readonly"
+	label, col := "YOLO", cPrimary
+	if ro {
+		label, col = "Solo lectura", cNeutral
+	}
+	f := face(wBold, size)
+	h := int(size * 1.9)
+	ic := float32(size * 0.8) // icon box
+	w := int(size*0.8) + int(ic) + int(size*0.4) + textW(f, label) + int(size*0.9)
+	c.fill(roundRect(float32(x), float32(y), float32(w), float32(h), float32(h)/2), mix(col, cSurface, 0.16))
+	ix, iy := float32(x)+float32(size*0.8), float32(y)+(float32(h)-ic)/2
+	if ro { // eye: almond + pupil
+		p := &path{}
+		p.moveTo(ix, iy+ic/2)
+		p.cubeTo(ix+ic*0.25, iy+ic*0.1, ix+ic*0.75, iy+ic*0.1, ix+ic, iy+ic/2)
+		p.cubeTo(ix+ic*0.75, iy+ic*0.9, ix+ic*0.25, iy+ic*0.9, ix, iy+ic/2)
+		p.close()
+		c.fill(p, col)
+		c.fill(circle(ix+ic/2, iy+ic/2, ic*0.16), mix(col, cSurface, 0.16))
+	} else { // bolt
+		u := ic / 24
+		p := &path{}
+		p.moveTo(ix+14*u, iy+1*u)
+		p.lineTo(ix+3*u, iy+14*u)
+		p.lineTo(ix+11*u, iy+14*u)
+		p.lineTo(ix+9*u, iy+23*u)
+		p.lineTo(ix+21*u, iy+9*u)
+		p.lineTo(ix+13*u, iy+9*u)
+		p.close()
+		c.fill(p, col)
+	}
+	c.text(f, int(ix+ic)+int(size*0.4), y+h/2+int(size*0.36), mix(col, cText, 0.88), label)
+	return w
+}
+
 // meter draws a rounded bar (track + value).
 func (c *canvas) meter(x, y, w, h int, v float64, hot bool) {
 	c.fill(roundRect(float32(x), float32(y), float32(w), float32(h), float32(h)/2), cTrack)
@@ -455,6 +496,7 @@ func pickGPU(g []cardGPU) int {
 
 type cardMachine struct {
 	Name, OS, Tone, Label, Detail string
+	Mode                          string // admin.mode: "yolo" | "readonly"
 	Online, Locked                bool
 	Stats                         *cardStats
 	Running, Services             int
@@ -473,10 +515,11 @@ func cardFrom(s machineStatus) cardMachine {
 		}
 	}
 	var admin struct {
-		Locked bool `json:"locked"`
+		Locked bool   `json:"locked"`
+		Mode   string `json:"mode"`
 	}
 	_ = json.Unmarshal(s.Admin, &admin)
-	m.Locked = admin.Locked
+	m.Locked, m.Mode = admin.Locked, admin.Mode
 	var idle struct {
 		Session    string  `json:"session"`
 		UserActive bool    `json:"user_active"`
@@ -589,6 +632,11 @@ func renderMachineCard(s machineStatus, h cardHistory) ([]byte, error) {
 	c.text(face(wTitle, 60), cardPad, y+50, cText, fit(face(wTitle, 60), m.Name, cardW-2*cardPad))
 	y += 82
 	cw := c.chip(cardPad, y, m.Tone, m.Label, 24)
+	if m.Online {
+		if mw := c.modeChip(cardPad+cw+12, y, m.Mode, 24); mw > 0 {
+			cw += 12 + mw
+		}
+	}
 	if m.Detail != "" {
 		c.text(face(wReg, 26), cardPad+cw+16, y+32, cText2, fit(face(wReg, 26), m.Detail, cardW-2*cardPad-cw-16))
 	}
@@ -769,7 +817,13 @@ func renderFleetCard(list []machineStatus) ([]byte, error) {
 		running += ms[i].Running
 	}
 
-	c := newCanvas(cardPad*2 + 400 + len(ms)*236 + 200)
+	// More than 4 machines: compact rows, so the photo doesn't get too tall on a phone.
+	compact := len(ms) > 4
+	rh, rowGap, barGap := 216, 20, 52
+	if compact {
+		rh, rowGap, barGap = 152, 14, 36
+	}
+	c := newCanvas(cardPad*2 + 400 + len(ms)*(rh+rowGap) + 200)
 	c.header(380)
 	c.brandRow(cardPad, time.Now().Format("15:04"))
 
@@ -807,12 +861,19 @@ func renderFleetCard(list []machineStatus) ([]byte, error) {
 	}
 
 	for _, m := range ms {
-		x, w, rh := cardPad, cardW-2*cardPad, 216
-		c.card(float32(x), float32(y), float32(w), float32(rh), 30)
+		x, w := cardPad, cardW-2*cardPad
+		c.card(float32(x), float32(y), float32(w), float32(rh), 26)
 		// left: identity
 		lx, lw := x+32, 420
-		c.text(face(wTitle, 34), lx, y+60, cText, fit(face(wTitle, 34), m.Name, lw))
-		c.chip(lx, y+84, m.Tone, m.Label, 20)
+		nameY, chipY, subY := y+60, y+84, y+170
+		if compact {
+			nameY, chipY, subY = y+50, y+68, y+130
+		}
+		c.text(face(wTitle, 34), lx, nameY, cText, fit(face(wTitle, 34), m.Name, lw))
+		cw := c.chip(lx, chipY, m.Tone, m.Label, 20)
+		if m.Online {
+			c.modeChip(lx+cw+10, chipY, m.Mode, 20)
+		}
 		sub := m.OS
 		if !m.Online {
 			sub = m.Detail
@@ -820,7 +881,7 @@ func renderFleetCard(list []machineStatus) ([]byte, error) {
 		if sub == "" {
 			sub = "—"
 		}
-		c.text(face(wReg, 21), lx, y+170, cText3, fit(face(wReg, 21), sub, lw))
+		c.text(face(wReg, 21), lx, subY, cText3, fit(face(wReg, 21), sub, lw))
 		// right: bars
 		bx, bw := x+w-32-440, 440
 		if m.Online && m.Stats != nil {
@@ -844,16 +905,19 @@ func renderFleetCard(list []machineStatus) ([]byte, error) {
 				}
 			}
 			ry := y + 46
+			if compact {
+				ry = y + 42
+			}
 			for _, r := range rows {
 				c.text(face(wBold, 21), bx, ry+8, cText3, r.k)
 				c.meter(bx+76, ry-2, bw-76-76, 10, val(r.v), val(r.v) >= 92)
 				c.textR(face(wBold, 22), bx+bw, ry+9, cText2, pctS(r.v))
-				ry += 52
+				ry += barGap
 			}
 		} else {
-			c.text(face(wReg, 22), bx, y+118, cText3, "Sin datos mientras no responda")
+			c.text(face(wReg, 22), bx, y+rh/2+8, cText3, "Sin datos mientras no responda")
 		}
-		y += rh + 20
+		y += rh + rowGap
 	}
 
 	y += 12

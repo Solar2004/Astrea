@@ -44,6 +44,11 @@ func TestRenderCards(t *testing.T) {
 		},
 		"machine-off": func() ([]byte, error) { return renderMachineCard(off, h) },
 		"fleet":       func() ([]byte, error) { return renderFleetCard([]machineStatus{on, busy, off}) },
+		"fleet-7": func() ([]byte, error) {
+			ro := busy
+			ro.Name, ro.Admin = "f1-1", json.RawMessage(`{"mode":"readonly"}`)
+			return renderFleetCard([]machineStatus{on, on, on, on, ro, off, off})
+		},
 		"fleet-empty": func() ([]byte, error) { return renderFleetCard(nil) },
 	}
 	for name, fn := range cases {

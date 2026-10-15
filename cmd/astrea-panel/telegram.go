@@ -453,6 +453,16 @@ func (b *telegramBot) machineView(name string) (view, error) {
 			caption += "\n🔒 La IA no puede hacer nada aquí hasta que la liberes."
 			lock = btn("🔓 Liberar", "u:"+n)
 		}
+		var admin struct {
+			Mode string `json:"mode"`
+		}
+		_ = json.Unmarshal(s.Admin, &admin)
+		switch admin.Mode {
+		case "yolo", "":
+			caption += "\n⚡ YOLO · la IA tiene control total"
+		case "readonly":
+			caption += "\n👁 Solo lectura · la IA puede mirar, no cambiar nada"
+		}
 		rows = [][]map[string]string{
 			{btn("🖥 Pantalla", "p:"+n), btn("🔄 Actualizar", "m:"+n)},
 			{btn("⚙️ Servicios", "s:"+n), btn("📜 Actividad", "a:"+n)},
