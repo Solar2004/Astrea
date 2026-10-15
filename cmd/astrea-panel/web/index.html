@@ -364,6 +364,25 @@
   .task-link span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .input.sel { width: auto; padding: 6px 10px; font-size: 13px; }
 
+  /* machine memory: notes (AI / you) + inventory */
+  .note-form { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
+  .note-form .btn { white-space: nowrap; height: 44px; }
+  .note-form textarea.input { min-height: 44px; height: 44px; font: inherit; resize: vertical; }
+  .notes .li { align-items: flex-start; }
+  .notes .who-tile { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex: none; font-size: 17px; background: var(--surface-2); }
+  .notes .who-tile.you { background: var(--primary-soft); }
+  .notes .what { min-width: 0; flex: 1; }
+  .notes .what p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .notes .what .meta { color: var(--text-3); font-size: 12px; margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .notes .what .meta .chip { height: 20px; padding: 0 8px; font-size: 11px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .chips .chip.miss { text-decoration: line-through; opacity: .75; }
+  details.fold { margin-top: 12px; }
+  details.fold > summary { cursor: pointer; font-weight: 600; color: var(--text-2); padding: 6px 4px; list-style-position: inside; }
+  details.fold .input { margin: 8px 0; max-width: 320px; }
+  .programs { columns: 260px auto; column-gap: 24px; font-size: 13px; color: var(--text-2); padding: 12px 16px; }
+  .programs div { break-inside: avoid; padding: 2px 0; }
+
   /* fleet notices (avisos): the text already carries its emoji; the tone is a bar on the left */
   .feed .li { align-items: flex-start; gap: 10px; }
   .feed .li::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--tone); }
@@ -520,6 +539,7 @@ const S = {
   evSeen: +localStorage.getItem("astrea.evSeen") || 0, // highest seq the user has looked at
   evOpenSeen: null, // evSeen when the notices view was opened: newer rows are highlighted
   evMachine: "",    // notices view: "" = whole fleet
+  mem: {},          // machine key -> {draft, refreshing, q, programs, summary} (memory tab UI state)
 };
 
 /* ---------- tiny DOM helpers ---------- */
@@ -659,7 +679,7 @@ function route() {
   if (h === "/avisos") return { name: "events" };
   return { name: "overview" };
 }
-const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["work", "Tareas", "tareas"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
+const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["work", "Tareas", "tareas"], ["mem", "Memoria", "memoria"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
 const taskHref = (machine, id) => "#/tareas/" + encodeURIComponent(machine) + "/" + encodeURIComponent(id);
 const TAB_IDS = Object.fromEntries(TABS.map(t => [t[2], t[0]]));
 const machineHref = (key, tab) => "#/m/" + encodeURIComponent(key) + (tab && tab !== "perf" ? "/" + TABS.find(t => t[0] === tab)[2] : "");
@@ -1411,6 +1431,104 @@ function tabActivity(m, key) {
   ];
 }
 
+/* machine memory */
+// GET /api/memory → {summary, inventory, notes}. Notes oldest first; by:"panel" = written by the owner, none = the AI.
+const memURL = key => "/api/memory?" + q({ machine: key });
+const memUI = key => S.mem[key] || (S.mem[key] = { draft: "", refreshing: false, q: "", programs: false, summary: false });
+function memReload(key) { const c = S.cache[memURL(key)]; if (c) c.t = 0; draw(); }
+function addNote(key) {
+  const u = memUI(key), text = u.draft.trim();
+  if (!text) return;
+  return act("note:" + key, async () => {
+    await api("POST", "/api/memory", JSON.stringify({ machine: key, text }));
+    u.draft = "";
+    memReload(key);
+  });
+}
+function forgetNote(key, id) {
+  return act(`forget:${key}:${id}`, async () => {
+    await api("DELETE", "/api/memory", JSON.stringify({ machine: key, id }));
+    const c = S.cache[memURL(key)];
+    if (c?.data?.notes) c.data.notes = c.data.notes.filter(n => n.id !== id);
+  });
+}
+async function rescan(key) {
+  const u = memUI(key);
+  u.refreshing = true; draw();
+  try {
+    const j = await api("GET", memURL(key) + "&refresh=1");
+    S.cache[memURL(key)] = { data: j, t: Date.now(), status: 200 };
+  } catch (e) { toast("No se pudo actualizar el inventario: " + e.message, "bad"); }
+  finally { u.refreshing = false; draw(); }
+}
+
+function tabMemory(m, key) {
+  const c = load(memURL(key), 30000), u = memUI(key);
+  if (!c.t) return $("div", { class: "card empty" }, "Cargando la memoria…");
+  if (c.err && !c.data) return c.status === 501 || /no tiene memory|unknown_method/.test(c.err)
+    ? $("div", { class: "card empty" }, $("h2", {}, "Este equipo aún no tiene memoria"),
+        $("p", {}, "Actualiza el agente para tener memoria: notas que la IA guarda sobre este equipo y un inventario de lo que tiene instalado."),
+        needsUpdate(m) ? confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", cls: "primary", run: () => updateAgent(key) }) : null)
+    : $("div", { class: "callout t-bad" }, icon("alert"), $("div", {}, $("b", {}, "No se pudo leer la memoria"), $("p", {}, c.err)));
+  const { notes = [], inventory: inv, summary } = c.data;
+
+  const form = $("form", { class: "note-form", onsubmit: e => { e.preventDefault(); addNote(key); } },
+    $("textarea", { class: "input", placeholder: "Deja una nota a la IA sobre este equipo: “los modelos están en D:\\models”…", "aria-label": "Nota nueva",
+      oninput: e => { u.draft = e.target.value; },
+      onkeydown: e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addNote(key); } } }, u.draft),
+    S.busy.has("note:" + key) ? $("button", { class: "btn", disabled: true }, icon("refresh", "spin"), "Guardando…")
+      : $("button", { class: "btn primary", type: "submit" }, icon("plus"), "Añadir nota"));
+  const noteRow = n => {
+    const you = n.by === "panel";
+    return $("div", { class: "li" },
+      $("span", { class: "who-tile" + (you ? " you" : ""), title: you ? "La escribiste tú" : "La escribió la IA", "aria-hidden": "true" }, you ? "👤" : "🤖"),
+      $("div", { class: "what" }, $("p", {}, n.text),
+        $("div", { class: "meta" }, $("span", {}, (you ? "Tú" : "IA") + " · " + when(n.time)), (n.tags || []).map(t => $("span", { class: "chip t-neutral" }, t)))),
+      confirmable(`forget:${key}:${n.id}`, { label: "Borrar", confirm: "Sí, borrar", cls: "sm danger", icon: "trash", run: () => forgetNote(key, n.id) }));
+  };
+
+  const li = (k, v, sub) => v == null || v === "" || (Array.isArray(v) && !v.length) ? null
+    : $("div", { class: "li" }, $("div", { class: "k" }, k, sub ? $("small", {}, sub) : null), $("div", { class: "v" }, v));
+  const lines = a => (a || []).length ? $("div", {}, a.map(x => $("div", {}, x))) : null;
+  const progs = inv?.programs || [], qq = u.q.trim().toLowerCase();
+  const shownProgs = qq ? progs.filter(p => p.toLowerCase().includes(qq)) : progs;
+  const fold = (which, label, ...kids) => {
+    const d = $("details", { class: "fold", open: u[which] || null }, $("summary", {}, label), ...kids);
+    d.addEventListener("toggle", () => { u[which] = d.open; });
+    return d;
+  };
+
+  return [
+    $("div", { class: "list-title" }, "Notas" + (notes.length ? " · " + notes.length : "")),
+    form,
+    notes.length ? $("div", { class: "list notes" }, [...notes].reverse().map(noteRow))
+      : $("div", { class: "card empty-sm", style: "padding:16px" }, "Sin notas todavía. La IA apunta aquí lo que aprende de este equipo (dónde está cada cosa, qué funciona y qué no); tú también puedes dejarle notas."),
+
+    $("div", { class: "toolbar", style: "margin:28px 0 8px" },
+      $("div", { class: "list-title", style: "margin:0" }, "Inventario"),
+      $("span", { class: "muted", style: "font-size:12px" }, inv?.updated ? "revisado " + when(inv.updated) : "sin revisar"),
+      $("span", { class: "spacer" }),
+      $("button", { class: "btn sm", disabled: u.refreshing || !m.online || null, onclick: () => rescan(key), title: m.online ? null : "El equipo no está conectado" },
+        icon("refresh", u.refreshing ? "spin" : ""), u.refreshing ? "Revisando el equipo…" : "Actualizar")),
+    inv ? $("div", { class: "list" },
+      li("Sistema", inv.os), li("Procesador", inv.cpu), li("Memoria", inv.ram_gb ? `${Math.round(inv.ram_gb)} GB` : null),
+      li("Gráfica", lines(inv.gpus)), li("Discos", lines(inv.disks)),
+      li("Herramientas", (inv.tools || []).length || (inv.missing || []).length ? $("div", { class: "chips" },
+        (inv.tools || []).map(t => $("span", { class: "chip t-good" }, t)),
+        (inv.missing || []).map(t => $("span", { class: "chip t-neutral miss", title: "No instalada" }, t))) : null,
+        (inv.missing || []).length ? "Tachadas: no instaladas" : null),
+      li("Servicios", (inv.services || []).length ? $("div", { class: "chips" }, inv.services.map(t => $("span", { class: "chip t-primary" }, t))) : null))
+      : $("div", { class: "card empty-sm", style: "padding:16px" }, "Aún no hay inventario. Pulsa Actualizar para revisar el equipo."),
+    progs.length ? fold("programs", `Programas instalados (${progs.length})`,
+      progs.length > 15 ? $("input", { class: "input", type: "search", placeholder: "Buscar programa…", value: u.q, "aria-label": "Buscar programa",
+        oninput: e => { u.q = e.target.value; const box = e.target.nextElementSibling, v = u.q.trim().toLowerCase();
+          for (const d of box.children) d.hidden = !!v && !d.textContent.toLowerCase().includes(v); } }) : null,
+      $("div", { class: "list programs" }, progs.map(p => $("div", { hidden: qq && !shownProgs.includes(p) || null }, p)))) : null,
+    summary ? fold("summary", "Ver cómo lo ve la IA", $("pre", {}, summary)) : null,
+    $("div", { class: "list-foot" }, "La memoria vive en el propio equipo: la IA la lee antes de trabajar en él."),
+  ];
+}
+
 function tabSystem(m, s) {
   const a = m.admin || {}, idle = m.idle;
   const li = (k, sub, v) => $("div", { class: "li" }, $("div", { class: "k" }, k, sub ? $("small", {}, sub) : null), $("div", { class: "v" }, v));
@@ -1493,7 +1611,7 @@ function viewMachine(list, id) {
       wf != null ? $("div", { style: "max-width:320px;margin-top:8px" }, meter(wf, { thin: true, label: "Progreso de la tarea" })) : null),
     $("div", { class: "actions" }, $("a", { class: "btn sm", href: taskHref(key, w.id) }, "Ver tarea"))) : null;
 
-  const body = tab === "svc" ? tabServices(m) : tab === "sys" ? tabSystem(m, s) : tab === "act" ? tabActivity(m, key) : tab === "work" ? tabWork(m, key) : tabPerformance(key, s);
+  const body = tab === "mem" ? tabMemory(m, key) : tab === "svc" ? tabServices(m) : tab === "sys" ? tabSystem(m, s) : tab === "act" ? tabActivity(m, key) : tab === "work" ? tabWork(m, key) : tabPerformance(key, s);
   return [head, callout, locked, working, seg, $("div", { role: "tabpanel" }, body)];
 }
 

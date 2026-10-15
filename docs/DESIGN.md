@@ -82,7 +82,7 @@ EQUIPOS                           avisos (actualizar / reinstalar)
 ● pc-aula2  Sin conexión
 AYUDA                             Detalle de equipo  (#/m/NOMBRE)
 ⊕ Añadir un equipo                  [Frenar IA] [Ver pantalla] [Actualizar]
-───────────────                     Rendimiento | Servicios | Tareas | Actividad | Sistema
+───────────────                     Rendimiento | Servicios | Tareas | Memoria | Actividad | Sistema
 ● Actualizado 19:31
   Astrea v0.3.0                   Ayuda  (#/ayuda): 3 pasos + glosario de estados
 ```
@@ -112,6 +112,8 @@ en el móvil.
 | `GET /api/live?machine=&w=` (MJPEG en un `<img>`) | Botón *Ver pantalla*: vídeo en vivo; calidad Rápida/Normal/Nítida = `w` 960/1280/1920; quitar el `src` corta el stream. Si el `<img>` falla, un `fetch` lee el estado: 502 sin sesión → “Nadie ha iniciado sesión”, sin conexión → “El equipo no responde”, 501 → “actualízalo” |
 | `POST /api/control {machine,on}` (+ `renew` cada 10 s) | *🕹 Tomar el control* / *Soltar el control*. Con control: anillo ámbar alrededor de la ventana y franja “Tienes el control — la IA no puede usar ratón ni teclado” con teclas rápidas (Esc, Tab, Enter, Alt+Tab, Win, Ctrl+C, Ctrl+V). Se suelta al cerrar, al salir de la página (`keepalive`) o si falla un latido. Con control, Esc va al equipo y solo la ✕ cierra |
 | `POST /api/input` | Clic (izq./der./medio), arrastre (down → move ≤10/s → up, umbral 5 px), rueda en muescas (100 px = 1), texto en ráfagas de 250 ms, combinaciones como `ctrl+c` (AltGr cuenta como texto). Se envían en orden, uno tras otro |
+| `GET /api/memory?machine=` (`&refresh=1` para volver a escanear) | Pestaña *Memoria* (`#/m/NOMBRE/memoria`): notas, la más nueva arriba, 🤖 IA / 👤 Tú (`by:"panel"`), etiquetas, *Borrar* con confirmación; inventario (sistema, procesador, RAM, gráfica, discos, herramientas con las que faltan tachadas, servicios), programas plegados con buscador si hay más de 15, y “Ver cómo lo ve la IA” (`summary`) plegado. *Actualizar* con spinner. 501 → “Actualiza el agente para tener memoria” |
+| `POST /api/memory {machine,text}`, `DELETE /api/memory {machine,id}` | Añadir nota (botón o Ctrl+Enter) y borrarla |
 | `GET /api/version`, `POST /api/update?machine=NOMBRE\|all\|hub` | Avisos del Resumen, botón *Actualizar agente* |
 | `POST /api/lock?machine=&locked=` | *Frenar IA* (cabecera), aviso rojo y *Sistema › Freno de emergencia* |
 | `POST /api/machines`, `DELETE /api/machines?name=` | *Añadir un equipo* (paso 3: pegar ficha) y *Sistema › Quitar del panel* |
@@ -125,7 +127,7 @@ en el móvil.
 | `GET /api/events` y luego `?since=last&wait=60` (long-poll sin fin) | *Avisos*: más nuevo arriba, hora relativa, texto tal cual (con emoji y saltos de línea), barra de color por `level` (good/info/warn/bad → verde/índigo/ámbar/rojo), enlace al equipo, filtro por equipo. Contador de no leídos en la barra lateral (último `seq` visto en `localStorage`; la primera visita no marca nada como nuevo); al abrir la vista se marcan leídos y los nuevos quedan resaltados. Tarjeta del Resumen: último aviso del equipo, con el punto latiendo si no está leído. 404 → “panel anterior a la v0.5”. La web conserva los avisos aunque el panel se reinicie |
 | `POST /api/work/cancel?machine=&id=` | Detalle › *Cancelar tarea* (solo en curso y con la PC conectada); confirmación “Sí, la IA dejará esta tarea” + aviso de que no cierra programas |
 
-Cada pestaña tiene URL propia: `#/m/NOMBRE/rendimiento|servicios|tareas|actividad|sistema`.
+Cada pestaña tiene URL propia: `#/m/NOMBRE/rendimiento|servicios|tareas|memoria|actividad|sistema`.
 La pestaña *Actividad* oculta por defecto las consultas que hace el propio panel
 (`sys.stats`, `admin.status`…), si no taparían lo que hace la IA.
 
