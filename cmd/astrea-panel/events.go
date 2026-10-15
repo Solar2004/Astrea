@@ -26,7 +26,7 @@ type event struct {
 	Machine string `json:"machine"`
 	// Kind: online, offline, lock, unlock, work.done, work.failed, job.done,
 	// job.failed, download.done, download.failed, service.failed, busy, free,
-	// gpu.hot, disk.full, ram.full.
+	// gpu.hot, disk.full, ram.full, control.on, control.off (live.go).
 	Kind  string `json:"kind"`
 	Level string `json:"level"` // good, info, warn, bad
 	Text  string `json:"text"`

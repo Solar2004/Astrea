@@ -3,6 +3,8 @@
 package capability
 
 import (
+	"fmt"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -136,4 +138,93 @@ type keybdInput struct {
 	dwFlags     uint32
 	time        uint32
 	dwExtraInfo uintptr
+}
+
+const (
+	mouseeventfWheel  = 0x0800
+	mouseeventfHWheel = 0x1000
+	keyeventfExtended = 0x0001
+	wheelDelta        = 120
+)
+
+func (winInput) MouseButton(button string, down bool) error {
+	flag := map[string][2]uint32{
+		"left":   {mouseeventfLeftDown, mouseeventfLeftUp},
+		"right":  {mouseeventfRightDown, mouseeventfRightUp},
+		"middle": {mouseeventfMiddleDown, mouseeventfMiddleUp},
+	}[button]
+	if flag[0] == 0 {
+		flag = [2]uint32{mouseeventfLeftDown, mouseeventfLeftUp}
+	}
+	in := input32{typ: inputMouse}
+	in.u.dwFlags = flag[1]
+	if down {
+		in.u.dwFlags = flag[0]
+	}
+	sendInput(&in)
+	return nil
+}
+
+func (winInput) Scroll(dx, dy int) error {
+	if dy != 0 {
+		in := input32{typ: inputMouse}
+		in.u.dwFlags = mouseeventfWheel
+		in.u.mouseData = uint32(int32(-dy * wheelDelta)) // positive = away from the user (up)
+		sendInput(&in)
+	}
+	if dx != 0 {
+		in := input32{typ: inputMouse}
+		in.u.dwFlags = mouseeventfHWheel
+		in.u.mouseData = uint32(int32(dx * wheelDelta))
+		sendInput(&in)
+	}
+	return nil
+}
+
+// winVK maps key.press names to virtual-key codes; ext marks extended keys.
+var winVK = map[string]uint16{
+	"ctrl": 0x11, "shift": 0x10, "alt": 0x12, "win": 0x5B, "enter": 0x0D, "esc": 0x1B,
+	"tab": 0x09, "backspace": 0x08, "space": 0x20, "delete": 0x2E, "insert": 0x2D,
+	"home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22, "left": 0x25, "up": 0x26,
+	"right": 0x27, "down": 0x28, "capslock": 0x14, "printscreen": 0x2C, "menu": 0x5D,
+}
+
+var winExtended = map[string]bool{"delete": true, "insert": true, "home": true, "end": true,
+	"pageup": true, "pagedown": true, "left": true, "up": true, "right": true, "down": true,
+	"win": true, "menu": true, "printscreen": true}
+
+func vkOf(k string) uint16 {
+	if vk, ok := winVK[k]; ok {
+		return vk
+	}
+	if len(k) == 1 { // a-z, 0-9: the VK is the uppercase ASCII code
+		return uint16(strings.ToUpper(k)[0])
+	}
+	var n int
+	if _, err := fmt.Sscanf(k, "f%d", &n); err == nil && n >= 1 && n <= 12 {
+		return uint16(0x70 + n - 1)
+	}
+	return 0
+}
+
+func (winInput) KeyPress(keys []string) error {
+	send := func(k string, up bool) {
+		in := input32{typ: inputKeyboard}
+		kb := (*keybdInput)(unsafe.Pointer(&in.u))
+		kb.wVk = vkOf(k)
+		if winExtended[k] {
+			kb.dwFlags |= keyeventfExtended
+		}
+		if up {
+			kb.dwFlags |= keyeventfKeyUp
+		}
+		sendInput(&in)
+	}
+	for _, k := range keys {
+		send(k, false)
+	}
+	for i := len(keys) - 1; i >= 0; i-- {
+		send(keys[i], true)
+	}
+	return nil
 }

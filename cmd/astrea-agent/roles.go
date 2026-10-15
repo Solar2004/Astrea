@@ -36,6 +36,10 @@ func guiCaps() []capability.Capability {
 		capability.MouseMove{},
 		capability.MouseClick{},
 		capability.KeyType{},
+		capability.MouseButton{},
+		capability.MouseScroll{},
+		capability.KeyPress{},
+		capability.PanelControl{},
 		capability.ScreenCapture{},
 		capability.SysIdle{},
 	}

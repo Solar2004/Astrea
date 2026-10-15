@@ -930,11 +930,12 @@ func (b *telegramBot) saveLocked() {
 // --- avisos ---
 
 // alert manda a Telegram un aviso del registro (events.go). Los de alguien
-// sentado / libre no: serían demasiados. Los del freno llegan siempre, salvo
+// sentado / libre no (serían demasiados), ni los del control desde el panel
+// (los provoca el propio usuario). Los del freno llegan siempre, salvo
 // si lo acaba de cambiar el propio bot.
 func (b *telegramBot) alert(e event) {
 	switch e.Kind {
-	case "busy", "free":
+	case "busy", "free", "control.on", "control.off":
 		return
 	case "lock", "unlock":
 		b.mu.Lock()

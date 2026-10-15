@@ -126,8 +126,8 @@ func (h *hub) apply() {
 	owner := map[string][]string{}
 	for _, name := range h.fleet.Names() { // config order: first machine's descriptor wins
 		for _, c := range h.caps[name] {
-			if c.Name == fleetStatusTool {
-				continue
+			if c.Name == fleetStatusTool || strings.HasPrefix(c.Name, "panel.") {
+				continue // panel.*: the owner's controls, not for the AI
 			}
 			if _, ok := desc[c.Name]; !ok {
 				desc[c.Name] = c

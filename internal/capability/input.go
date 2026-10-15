@@ -13,6 +13,9 @@ type inputBackend interface {
 	MouseMove(x, y int) error
 	MouseClick(button string, double bool) error
 	KeyType(text string) error
+	MouseButton(button string, down bool) error
+	Scroll(dx, dy int) error
+	KeyPress(keys []string) error // modifiers first, as parsed by parseKeys
 }
 
 // input is the active backend for the build's OS.
@@ -45,7 +48,7 @@ func (MouseMove) Describe() Descriptor {
 }
 
 func (MouseMove) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
-	if err := requireInput(); err != nil {
+	if err := checkInput(payload); err != nil {
 		return nil, err
 	}
 	var req struct{ X, Y int }
@@ -80,7 +83,7 @@ func (MouseClick) Describe() Descriptor {
 }
 
 func (MouseClick) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
-	if err := requireInput(); err != nil {
+	if err := checkInput(payload); err != nil {
 		return nil, err
 	}
 	req := struct {
@@ -121,7 +124,7 @@ func (KeyType) Describe() Descriptor {
 }
 
 func (KeyType) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
-	if err := requireInput(); err != nil {
+	if err := checkInput(payload); err != nil {
 		return nil, err
 	}
 	var req struct {

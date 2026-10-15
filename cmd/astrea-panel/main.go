@@ -126,6 +126,9 @@ func main() {
 	mux.HandleFunc("/api/service", p.handleService)
 	mux.HandleFunc("/api/service/logs", p.handleServiceLogs)
 	mux.HandleFunc("/api/events", p.handleEvents)
+	mux.HandleFunc("/api/live", p.handleLive)
+	mux.HandleFunc("/api/control", p.handleControl)
+	mux.HandleFunc("/api/input", p.handleInput)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
