@@ -126,3 +126,5 @@ func readHex(path string) uint64 {
 	v, _ := strconv.ParseUint(strings.TrimPrefix(strings.TrimSpace(string(b)), "0x"), 16, 32)
 	return v
 }
+
+func gpuProcs(ctx context.Context) map[int]ProcGPU { return nvidiaProcs(ctx) }

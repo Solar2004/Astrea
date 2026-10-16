@@ -90,8 +90,16 @@ func (g *Guard) Locked() bool {
 
 // Audit appends one JSON line per invocation to a file. Safe for concurrent use.
 type Audit struct {
-	mu sync.Mutex
-	f  *os.File
+	mu     sync.Mutex
+	f      *os.File
+	notify func(Entry)
+}
+
+// Notify calls fn after every logged entry (set once, at startup).
+func (a *Audit) Notify(fn func(Entry)) {
+	if a != nil {
+		a.notify = fn
+	}
 }
 
 // NewAudit opens (or creates) the audit log at path. A nil Audit is a no-op.
@@ -142,8 +150,11 @@ func (a *Audit) Log(ctx context.Context, method string, args json.RawMessage, er
 	}
 	data, _ := json.Marshal(e)
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.f.Write(append(data, '\n'))
+	a.mu.Unlock()
+	if a.notify != nil {
+		a.notify(e)
+	}
 }
 
 // Path is the audit file location ("" if disabled).

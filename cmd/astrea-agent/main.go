@@ -34,6 +34,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/task"
 	"github.com/Solar2004/Astrea/internal/transport"
 	"github.com/Solar2004/Astrea/internal/update"
+	"github.com/Solar2004/Astrea/internal/uptime"
 	"github.com/Solar2004/Astrea/internal/work"
 )
 
@@ -186,6 +187,16 @@ func run() *log.Logger {
 	}
 	defer audit.Close()
 
+	// Uptime: when this PC was on, kept here so the history survives the panel
+	// being down; counts the AI's actions (those under a declared task) per hour.
+	ups := uptime.Open(filepath.Join(cfg.DataDir, "uptime.json"))
+	go ups.Run(ctx)
+	audit.Notify(func(e security.Entry) {
+		if e.Work != "" {
+			ups.Count(time.Now())
+		}
+	})
+
 	// Declared work: what the AI says it is doing here, tagged on every action.
 	works := work.Open(filepath.Join(cfg.DataDir, "work.json"))
 	defer works.Flush()
@@ -213,6 +224,7 @@ func run() *log.Logger {
 	reg.Register(&capability.SysStats{})
 	reg.Register(capability.ProcList{})
 	reg.Register(capability.ProcKill{})
+	reg.Register(capability.SysUptime{Store: ups})
 	// Input, screen and idle detection need the desktop session: served here,
 	// or (headless) forwarded to the gui helper running in that session.
 	var bridge *guibridge.Bridge
@@ -268,6 +280,10 @@ func run() *log.Logger {
 	go svcs.StartAll()
 	downloads := download.NewManager()
 	defer downloads.StopAll()
+	// Disk: delete old temp files and job logs, on its own past 90%.
+	cleaner := &capability.Cleaner{JobsDir: filepath.Join(cfg.DataDir, "jobs"), AutoPercent: 90}
+	go cleaner.Loop(ctx)
+	reg.Register(capability.DiskCleanup{Cleaner: cleaner})
 	reg.Register(capability.NetDownload{Mgr: downloads})
 	reg.Register(capability.NetDownloadStatus{Mgr: downloads})
 	reg.Register(capability.NetDownloadCancel{Mgr: downloads})
@@ -322,11 +338,14 @@ func run() *log.Logger {
 	go upd.loop(ctx)
 	// Admin / kill switch.
 	reg.Register(capability.AdminLock{Guard: guard})
-	capability.RegisterWork(reg, works, audit.Path())
+	capability.RegisterWork(reg, works, audit.Path(), filepath.Join(cfg.DataDir, "shots"))
 	// Memory: what this PC has and what was done here, handed to the AI when it starts a task.
 	capability.RegisterMemory(reg, &capability.Memory{Notes: memory.Open(filepath.Join(cfg.DataDir, "memory.json")), Works: works, Reg: reg})
 	reg.Register(capability.AdminStatus{Guard: guard, Mode: cfg.Mode, Extra: func() map[string]any {
 		m := upd.status()
+		if c := cleaner.Last(); c != nil {
+			m["cleanup"] = c
+		}
 		if t, ok := works.Current(); ok {
 			m["work"] = t
 		}

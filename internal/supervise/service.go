@@ -69,6 +69,9 @@ type ServiceStatus struct {
 	StartedAt time.Time `json:"started_at,omitzero"`
 	UptimeSec float64   `json:"uptime_sec,omitempty"`
 	LogPath   string    `json:"log_path"`
+	// GPU use of the service and its child processes (filled by service.status).
+	GPUMem     uint64   `json:"gpu_mem,omitempty"`
+	GPUPercent *float64 `json:"gpu_percent,omitempty"`
 }
 
 type service struct {

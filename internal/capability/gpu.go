@@ -150,6 +150,7 @@ func applyNvidia(g *GPU, n nvidiaGPU) {
 // The LUID ties a counter to a DXGI adapter. They live here, not in the
 // Windows file, so the parsing is tested on every platform.
 var (
+	rePID    = regexp.MustCompile(`^pid_(\d+)_`)
 	reLUID   = regexp.MustCompile(`luid_0x([0-9A-Fa-f]{8})_0x([0-9A-Fa-f]{8})`)
 	reEngine = regexp.MustCompile(`_eng_(\d+)`)
 )
@@ -195,4 +196,85 @@ func gpuUtilization(engines map[string]float64) map[string]float64 {
 		}
 	}
 	return out
+}
+
+// ProcGPU is one process's use of the GPUs.
+type ProcGPU struct {
+	Mem     uint64   // dedicated VRAM, bytes
+	Percent *float64 // busiest engine, Windows only
+}
+
+// procGPUs folds the per-process counter instances ("pid_1234_luid_…") by
+// pid: memory summed over adapters, utilization as gpuUtilization per process.
+func procGPUs(engines, mem map[string]float64) map[int]ProcGPU {
+	out := map[int]ProcGPU{}
+	byPID := map[int]map[string]float64{}
+	for name, v := range engines {
+		if m := rePID.FindStringSubmatch(name); m != nil {
+			pid, _ := strconv.Atoi(m[1])
+			if byPID[pid] == nil {
+				byPID[pid] = map[string]float64{}
+			}
+			byPID[pid][name] = v
+		}
+	}
+	for pid, e := range byPID {
+		best := 0.0
+		for _, v := range gpuUtilization(e) {
+			best = max(best, v)
+		}
+		if best > 0 {
+			p := out[pid]
+			p.Percent = &best
+			out[pid] = p
+		}
+	}
+	for name, v := range mem {
+		if m := rePID.FindStringSubmatch(name); m != nil && v > 0 {
+			pid, _ := strconv.Atoi(m[1])
+			p := out[pid]
+			p.Mem += uint64(v)
+			out[pid] = p
+		}
+	}
+	return out
+}
+
+// nvidiaProcs reads the VRAM of each process using an NVIDIA GPU (nil when
+// nvidia-smi is missing; Windows reports [N/A] here, so it uses counters).
+func nvidiaProcs(ctx context.Context) map[int]ProcGPU {
+	bin, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits")
+	procutil.NoConsole(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return parseComputeApps(string(out))
+}
+
+// parseComputeApps parses "pid, used_memory (MiB)" rows.
+func parseComputeApps(out string) map[int]ProcGPU {
+	res := map[int]ProcGPU{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		f := strings.Split(line, ",")
+		if len(f) < 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(f[0]))
+		if err != nil {
+			continue
+		}
+		if v := parseFloat(strings.TrimSpace(f[1])); v != nil {
+			p := res[pid]
+			p.Mem += uint64(*v) << 20
+			res[pid] = p
+		}
+	}
+	return res
 }

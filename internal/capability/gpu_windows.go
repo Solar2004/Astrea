@@ -121,6 +121,7 @@ type pdhQuery struct {
 	engines  uintptr
 	dedic    uintptr
 	shared   uintptr
+	procMem  uintptr
 	openedAt time.Time
 }
 
@@ -155,6 +156,7 @@ func openPDH() *pdhQuery {
 	add(`\GPU Engine(*)\Utilization Percentage`, &q.engines)
 	add(`\GPU Adapter Memory(*)\Dedicated Usage`, &q.dedic)
 	add(`\GPU Adapter Memory(*)\Shared Usage`, &q.shared)
+	add(`\GPU Process Memory(*)\Dedicated Usage`, &q.procMem)
 	if q.engines == 0 && q.dedic == 0 {
 		q.close()
 		return nil // pre-1709 Windows: no GPU counters
@@ -202,6 +204,42 @@ var gpuState struct {
 	adapters []dxgiAdapter
 	listedAt time.Time
 	pdh      *pdhQuery
+	// Last per-process sample, so gpuProcs right after gpuStats reuses it.
+	engines, procMem map[string]float64
+	sampledAt        time.Time
+}
+
+// ensurePDH opens the counters, reopening them periodically so the wildcard
+// counters pick up new GPU processes. Call with gpuState.mu held.
+func ensurePDH() *pdhQuery {
+	s := &gpuState
+	if s.pdh != nil && time.Since(s.pdh.openedAt) > 2*time.Minute {
+		s.pdh.close()
+		s.pdh = nil
+	}
+	if s.pdh == nil {
+		if s.pdh = openPDH(); s.pdh != nil {
+			s.pdh.collect() // first sample; rates need two
+			time.Sleep(250 * time.Millisecond)
+		}
+	}
+	return s.pdh
+}
+
+// gpuProcs returns each process's GPU memory and busiest engine, as Task
+// Manager's "GPU" and "Dedicated GPU memory" columns.
+func gpuProcs(context.Context) map[int]ProcGPU {
+	s := &gpuState
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if time.Since(s.sampledAt) > 5*time.Second {
+		q := ensurePDH()
+		if q == nil || !q.collect() {
+			return nil
+		}
+		s.engines, s.procMem, s.sampledAt = q.array(q.engines), q.array(q.procMem), time.Now()
+	}
+	return procGPUs(s.engines, s.procMem)
 }
 
 func gpuStats(ctx context.Context) []GPU {
@@ -213,22 +251,13 @@ func gpuStats(ctx context.Context) []GPU {
 		s.adapters = enumDXGI()
 		s.listedAt = time.Now()
 	}
-	// Reopen periodically so wildcard counters pick up new GPU processes.
-	if s.pdh != nil && time.Since(s.pdh.openedAt) > 2*time.Minute {
-		s.pdh.close()
-		s.pdh = nil
-	}
-	if s.pdh == nil {
-		if s.pdh = openPDH(); s.pdh != nil {
-			s.pdh.collect() // first sample; rates need two
-			time.Sleep(250 * time.Millisecond)
-		}
-	}
+	ensurePDH()
 
 	var util map[string]float64
 	dedic, shared := map[string]float64{}, map[string]float64{}
 	if s.pdh != nil && s.pdh.collect() {
-		util = gpuUtilization(s.pdh.array(s.pdh.engines))
+		s.engines, s.procMem, s.sampledAt = s.pdh.array(s.pdh.engines), s.pdh.array(s.pdh.procMem), time.Now()
+		util = gpuUtilization(s.engines)
 		for name, v := range s.pdh.array(s.pdh.dedic) {
 			if l, ok := luidFromInstance(name); ok {
 				dedic[l] += v

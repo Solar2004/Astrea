@@ -2,9 +2,14 @@ package capability
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/Solar2004/Astrea/internal/security"
@@ -14,12 +19,121 @@ import (
 // RegisterWork registers the work.* capabilities: declaring, reporting and
 // reading the tasks the AI works on here. auditPath ("" = disabled) feeds
 // work.get with the actions each task actually ran.
-func RegisterWork(r *Registry, s *work.Store, auditPath string) {
+// shotDir ("" = disabled) keeps a screenshot of every task that ends failed.
+func RegisterWork(r *Registry, s *work.Store, auditPath, shotDir string) {
+	shots := &Shots{Dir: shotDir, Reg: r}
 	r.Register(WorkStart{Store: s})
 	r.Register(WorkUpdate{Store: s})
-	r.Register(WorkEnd{Store: s})
+	r.Register(WorkEnd{Store: s, Shots: shots})
 	r.Register(WorkList{Store: s})
-	r.Register(WorkGet{Store: s, AuditPath: auditPath})
+	r.Register(WorkGet{Store: s, AuditPath: auditPath, Shots: shots})
+	r.Register(WorkShot{Shots: shots})
+}
+
+// Shots are the screenshots taken when a task fails: what was on screen when
+// the AI gave up, for the owner to see later.
+type Shots struct {
+	Dir string
+	Reg *Registry
+}
+
+const keepShots = 50
+
+func (s *Shots) path(id string) string {
+	if s == nil || s.Dir == "" || id == "" || strings.ContainsAny(id, `/\.`) {
+		return ""
+	}
+	return filepath.Join(s.Dir, id+".jpg")
+}
+
+// Has reports whether task id has a failure screenshot.
+func (s *Shots) Has(id string) bool {
+	p := s.path(id)
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// Take captures the screen for task id (best effort, in the background: the
+// PC may be locked, asleep or without a desktop).
+func (s *Shots) Take(id string) {
+	p := s.path(id)
+	if p == "" || s.Reg == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+		defer cancel()
+		res, err := s.Reg.Dispatch(ctx, "screen.capture", json.RawMessage(`{"max_width":1280,"quality":70,"format":"jpeg"}`), func(protocol.StreamChunk) {})
+		if err != nil {
+			return
+		}
+		raw, _ := json.Marshal(res)
+		var out struct {
+			Images []Image `json:"images"`
+		}
+		if json.Unmarshal(raw, &out) != nil || len(out.Images) == 0 {
+			return
+		}
+		data, err := base64.StdEncoding.DecodeString(out.Images[0].Data)
+		if err != nil || os.MkdirAll(s.Dir, 0o755) != nil {
+			return
+		}
+		if os.WriteFile(p, data, 0o644) == nil {
+			s.prune()
+		}
+	}()
+}
+
+func (s *Shots) prune() {
+	files, _ := filepath.Glob(filepath.Join(s.Dir, "*.jpg"))
+	if len(files) <= keepShots {
+		return
+	}
+	type f struct {
+		path string
+		mod  time.Time
+	}
+	var all []f
+	for _, p := range files {
+		if st, err := os.Stat(p); err == nil {
+			all = append(all, f{p, st.ModTime()})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].mod.After(all[j].mod) })
+	for _, x := range all[min(keepShots, len(all)):] {
+		os.Remove(x.path)
+	}
+}
+
+// WorkShot returns the screenshot taken when a task failed.
+type WorkShot struct{ Shots *Shots }
+
+func (WorkShot) Name() string { return "work.shot" }
+
+func (WorkShot) Describe() Descriptor {
+	return Descriptor{
+		Name:        "work.shot",
+		Description: "The screenshot taken automatically when a task ended as failed (see work.get \"shot\": true).",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {"id": {"type": "string", "description": "task id"}},
+			"required": ["id"]
+		}`),
+	}
+}
+
+func (w WorkShot) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
+	var req struct{ ID string }
+	_ = json.Unmarshal(payload, &req)
+	p := w.Shots.path(req.ID)
+	data, err := os.ReadFile(p)
+	if p == "" || err != nil {
+		return nil, badRequest(errors.New("no screenshot for this task"))
+	}
+	return map[string]any{"id": req.ID, "images": []Image{{MimeType: "image/jpeg", Data: base64.StdEncoding.EncodeToString(data)}}}, nil
 }
 
 // WorkStart opens a task explicitly.
@@ -83,7 +197,10 @@ func (w WorkUpdate) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (
 }
 
 // WorkEnd closes the current task.
-type WorkEnd struct{ Store *work.Store }
+type WorkEnd struct {
+	Store *work.Store
+	Shots *Shots
+}
 
 func (WorkEnd) Name() string { return "work.end" }
 
@@ -108,6 +225,9 @@ func (w WorkEnd) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any
 	t, err := w.Store.End(req.ID, req.Status, req.Summary)
 	if err != nil {
 		return nil, badRequest(err)
+	}
+	if t.Status == work.Failed {
+		w.Shots.Take(t.ID)
 	}
 	return t, nil
 }
@@ -145,6 +265,7 @@ func (w WorkList) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (an
 type WorkGet struct {
 	Store     *work.Store
 	AuditPath string
+	Shots     *Shots
 }
 
 func (WorkGet) Name() string { return "work.get" }
@@ -191,5 +312,5 @@ func (w WorkGet) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any
 			actions = got
 		}
 	}
-	return map[string]any{"task": t, "actions": actions}, nil
+	return map[string]any{"task": t, "actions": actions, "shot": w.Shots.Has(t.ID)}, nil
 }

@@ -13,3 +13,5 @@ func gpuStats(ctx context.Context) []GPU {
 	}
 	return out
 }
+
+func gpuProcs(ctx context.Context) map[int]ProcGPU { return nvidiaProcs(ctx) }

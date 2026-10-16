@@ -8,6 +8,7 @@ import (
 
 	"github.com/Solar2004/Astrea/internal/endpoint"
 	"github.com/Solar2004/Astrea/internal/supervise"
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 // ServiceStart defines and runs a supervised long-lived process, optionally
@@ -157,7 +158,7 @@ func (ServiceStatus) Describe() Descriptor {
 	}
 }
 
-func (c ServiceStatus) Invoke(_ context.Context, payload json.RawMessage, _ Emit) (any, error) {
+func (c ServiceStatus) Invoke(ctx context.Context, payload json.RawMessage, _ Emit) (any, error) {
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -165,13 +166,69 @@ func (c ServiceStatus) Invoke(_ context.Context, payload json.RawMessage, _ Emit
 		return nil, err
 	}
 	if req.Name == "" {
-		return map[string]any{"services": c.Svcs.List()}, nil
+		list := c.Svcs.List()
+		withGPU(ctx, list)
+		return map[string]any{"services": list}, nil
 	}
 	st, err := c.Svcs.Status(req.Name)
 	if err != nil {
 		return nil, badRequest(err)
 	}
-	return map[string]any{"service": st, "log_tail": tail(c.Svcs.Log(req.Name, 0, 20, 0))}, nil
+	one := []supervise.ServiceStatus{st}
+	withGPU(ctx, one)
+	return map[string]any{"service": one[0], "log_tail": tail(c.Svcs.Log(req.Name, 0, 20, 0))}, nil
+}
+
+// withGPU fills in each running service's GPU use, counting its child
+// processes too (a model server started through a shell, python workers…).
+func withGPU(ctx context.Context, list []supervise.ServiceStatus) {
+	running := false
+	for _, s := range list {
+		running = running || s.PID != 0
+	}
+	if !running {
+		return
+	}
+	procs := gpuProcs(ctx)
+	if len(procs) == 0 {
+		return
+	}
+	for i := range list {
+		if list[i].PID == 0 {
+			continue
+		}
+		var pct float64
+		seen := false
+		for _, pid := range procTree(ctx, int32(list[i].PID)) {
+			if g, ok := procs[int(pid)]; ok {
+				list[i].GPUMem += g.Mem
+				if g.Percent != nil {
+					pct += *g.Percent
+					seen = true
+				}
+			}
+		}
+		if seen {
+			pct = min(pct, 100)
+			list[i].GPUPercent = &pct
+		}
+	}
+}
+
+// procTree is root and all its descendants (bounded).
+func procTree(ctx context.Context, root int32) []int32 {
+	out := []int32{root}
+	for i := 0; i < len(out) && len(out) < 256; i++ {
+		p, err := process.NewProcessWithContext(ctx, out[i])
+		if err != nil {
+			continue
+		}
+		kids, _ := p.ChildrenWithContext(ctx)
+		for _, k := range kids {
+			out = append(out, k.Pid)
+		}
+	}
+	return out
 }
 
 // ServiceLogs pages through a service's output.

@@ -46,3 +46,23 @@ func TestLUIDKeyMatchesInstance(t *testing.T) {
 		t.Fatalf("got %q, want %q", k, luidKey(0, 0xC6F2))
 	}
 }
+
+func TestProcGPUs(t *testing.T) {
+	eng := map[string]float64{
+		"pid_10_luid_0x00000000_0x0000D1A2_phys_0_eng_0_engtype_3D":      30,
+		"pid_10_luid_0x00000000_0x0000D1A2_phys_0_eng_3_engtype_Compute": 70,
+		"pid_20_luid_0x00000000_0x0000D1A2_phys_0_eng_0_engtype_3D":      5,
+	}
+	mem := map[string]float64{"pid_10_luid_0x00000000_0x0000D1A2_phys_0": 2 << 30, "pid_30_luid_0x00000000_0x0000D1A2_phys_0": 0}
+	got := procGPUs(eng, mem)
+	if g := got[10]; g.Mem != 2<<30 || g.Percent == nil || *g.Percent != 70 {
+		t.Errorf("pid 10 = %+v", g)
+	}
+	if _, ok := got[30]; ok {
+		t.Error("pid 30 uses nothing")
+	}
+	apps := parseComputeApps("1234, 5120\n99, [N/A]\n")
+	if apps[1234].Mem != 5120<<20 || apps[99].Mem != 0 {
+		t.Errorf("apps = %+v", apps)
+	}
+}
