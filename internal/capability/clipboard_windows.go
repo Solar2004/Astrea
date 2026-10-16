@@ -73,7 +73,10 @@ func (c winClip) Text() (string, bool, error) {
 		return "", false, fmt.Errorf("GlobalLock: %v", err)
 	}
 	defer procGlobalUnlock.Call(h)
-	return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(p))), false, nil
+	// p is an address returned by GlobalLock; reinterpret the uintptr's bits as
+	// a *uint16 without a direct uintptr→Pointer conversion (go vet).
+	ptr := *(**uint16)(unsafe.Pointer(&p))
+	return windows.UTF16PtrToString(ptr), false, nil
 }
 
 func (c winClip) SetText(text string) error {
@@ -98,7 +101,8 @@ func (c winClip) SetText(text string) error {
 		procGlobalFree.Call(h)
 		return fmt.Errorf("GlobalLock: %v", err)
 	}
-	copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(u)), u)
+	dst := *(**uint16)(unsafe.Pointer(&p))
+	copy(unsafe.Slice(dst, len(u)), u)
 	procGlobalUnlock.Call(h)
 	if r, _, err := procSetClipboardData.Call(cfUnicodeText, h); r == 0 {
 		procGlobalFree.Call(h) // the system did not take ownership

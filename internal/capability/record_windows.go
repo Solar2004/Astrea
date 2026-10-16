@@ -192,7 +192,7 @@ func mouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	if nCode < 0 || r == nil {
 		return callNext(nCode, wParam, lParam)
 	}
-	s := (*msllhookstruct)(unsafe.Pointer(lParam))
+	s := *(**msllhookstruct)(unsafe.Pointer(&lParam))
 	if s.flags&llmhfInjected == 0 { // ignore Astrea's own clicks
 		r.mu.Lock()
 		switch wParam {
@@ -215,7 +215,7 @@ func keyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	if nCode < 0 || r == nil {
 		return callNext(nCode, wParam, lParam)
 	}
-	k := (*kbdllhookstruct)(unsafe.Pointer(lParam))
+	k := *(**kbdllhookstruct)(unsafe.Pointer(&lParam))
 	if (wParam == wmKeyDown || wParam == wmSysKeyDown) && k.flags&llkhfInjected == 0 {
 		r.recordKey(uint16(k.vkCode))
 	}
