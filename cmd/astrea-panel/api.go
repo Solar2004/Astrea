@@ -46,6 +46,12 @@ func (p *panel) call(ctx context.Context, machine, method string, args, out any,
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// Marked as the owner's, so the agent does not count it as the AI's activity.
+	if m, ok := args.(map[string]any); ok {
+		if _, set := m["from"]; !set {
+			m["from"] = "panel"
+		}
+	}
 	res, err := client.Call(ctx, method, args)
 	if err != nil {
 		if strings.Contains(err.Error(), "unknown method") {

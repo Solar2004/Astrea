@@ -395,6 +395,7 @@
   .feed .li.new .when { color: var(--primary); font-weight: 600; }
   .mcard .notice { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--text-2); margin-top: -4px; }
   .mcard .notice .txt { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mcard .notice > .icon { width: 14px; height: 14px; color: var(--text-3); }
   .mcard .notice .ago { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .nav-item .badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
 
@@ -1548,6 +1549,7 @@ function machineCard(m, idx) {
             g.u != null || g.v != null ? mini(g.u != null ? "GPU" : "VRAM", g.u ?? g.v) : $("div", {}))
         : $("div", { class: "off-msg" }, "Esperando datos…"),
       workStrip(m.admin?.work),
+      lastActionLine(m),
       noticeLine(key),
       squares(m.name, 28),
       $("div", { class: "bottom" },
@@ -1556,6 +1558,14 @@ function machineCard(m, idx) {
         $("span", { class: "spacer" }),
         nSvc ? $("span", { class: "muted" }, nSvc + (nSvc === 1 ? " servicio" : " servicios")) : null,
         needsUpdate(m) ? chip("primary", "Actualización", false) : null)));
+}
+// lastActionLine: "⚡ Ejecutó un comando · hace 3 min" — the AI's latest action (admin.status last_action).
+function lastActionLine(m) {
+  const e = m.admin?.last_action;
+  if (!e?.time) return null;
+  return $("div", { class: "notice", title: when(e.time) + (e.ok ? "" : " · falló: " + (e.err || "")) },
+    icon("bolt"), $("span", { class: "txt" }, "Última actividad: " + verb(e.method) + (e.ok ? "" : " (falló)")),
+    $("span", { class: "ago" }, ago((Date.now() - Date.parse(e.time)) / 1000)));
 }
 function machineRow(m, idx) {
   const key = keyOf(m, idx), s = m.online ? m.stats : null, p = presence(m, key), g = gpuPeak(s);

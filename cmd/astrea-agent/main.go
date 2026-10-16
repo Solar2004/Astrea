@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -61,6 +63,15 @@ func listenRetry(ctx context.Context, addr string, logger *log.Logger) net.Liste
 			delay *= 2
 		}
 	}
+}
+
+// panelPolls are the read-only calls the panel and hub make on their own
+// (status, stats, thumbnails…): they say nothing about what the AI did.
+var panelPolls = map[string]bool{
+	"admin.status": true, "admin.audit": true, "sys.stats": true, "sys.idle": true, "sys.info": true,
+	"sys.uptime": true, "service.status": true, "service.logs": true, "work.list": true, "work.get": true,
+	"work.shot": true, "memory.get": true, "screen.capture": true, "panel.control": true,
+	"capabilities": true, "ping": true, "agent.update": true, "disk.cleanup": true,
 }
 
 // openLog opens path for appending, starting fresh once it grows past 5 MiB.
@@ -191,9 +202,16 @@ func run() *log.Logger {
 	// being down; counts the AI's actions (those under a declared task) per hour.
 	ups := uptime.Open(filepath.Join(cfg.DataDir, "uptime.json"))
 	go ups.Run(ctx)
+	// lastAction: the AI's latest action here, for the panel's cards. The
+	// panel's own polling and its "from":"panel" input are not the AI.
+	var lastAction atomic.Value // security.Entry
 	audit.Notify(func(e security.Entry) {
 		if e.Work != "" {
 			ups.Count(time.Now())
+		}
+		if e.Work != "" || (!panelPolls[e.Method] && !strings.Contains(e.Args, `"from":"panel"`)) {
+			e.Args = ""
+			lastAction.Store(e)
 		}
 	})
 
@@ -345,6 +363,9 @@ func run() *log.Logger {
 		m := upd.status()
 		if c := cleaner.Last(); c != nil {
 			m["cleanup"] = c
+		}
+		if e, ok := lastAction.Load().(security.Entry); ok {
+			m["last_action"] = e
 		}
 		if t, ok := works.Current(); ok {
 			m["work"] = t
