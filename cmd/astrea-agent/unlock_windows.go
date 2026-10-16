@@ -30,6 +30,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -39,12 +40,13 @@ import (
 
 var (
 	uUser32                   = windows.NewLazySystemDLL("user32.dll")
-	pOpenDesktopW             = uUser32.NewProc("OpenDesktopW")
 	pSetThreadDesktop         = uUser32.NewProc("SetThreadDesktop")
 	pCloseDesktop             = uUser32.NewProc("CloseDesktop")
 	pOpenInputDesktop         = uUser32.NewProc("OpenInputDesktop")
 	pGetUserObjectInformation = uUser32.NewProc("GetUserObjectInformationW")
 	pKeybdEvent               = uUser32.NewProc("keybd_event")
+	pGetForegroundWindow      = uUser32.NewProc("GetForegroundWindow")
+	pGetWindowThreadProcessId = uUser32.NewProc("GetWindowThreadProcessId")
 )
 
 const (
@@ -201,25 +203,40 @@ func failSystem(logger *log.Logger, result, step string, err error) int {
 	return 1
 }
 
-// unlockDesktopPhase runs in the console session on the Winlogon desktop. It
-// presses the keys to dismiss the lock screen and sign in (no password), and
-// checks the input desktop returned to Default.
+// unlockDesktopPhase runs in the console session. The LockApp curtain lives on
+// the Default desktop; dismissing it switches input to the secure Winlogon
+// desktop where the sign-in UI appears. To make our keys land, we re-attach to
+// whichever desktop currently receives input on every round. For a passwordless
+// account a key dismisses the curtain and Enter signs straight back in.
 func unlockDesktopPhase(logger *log.Logger, result string, capture bool) int {
 	logger.Printf("unlock: desktop phase starting")
 	res := map[string]any{"phase": "desktop"}
 
-	hDesk, _, _ := pOpenDesktopW.Call(
-		uintptr(unsafe.Pointer(mustUTF16("winlogon"))), 0, 0, uintptr(desktopAll))
-	if hDesk == 0 {
-		hInput, _, _ := pOpenInputDesktop.Call(0, 0, uintptr(desktopAll))
-		hDesk = hInput
+	var cur uintptr // the desktop handle currently assigned to this thread
+	attach := func() {
+		h, _, _ := pOpenInputDesktop.Call(0, 0, uintptr(desktopAll))
+		if h == 0 {
+			return
+		}
+		if r, _, _ := pSetThreadDesktop.Call(h); r == 0 {
+			pCloseDesktop.Call(h)
+			return
+		}
+		if cur != 0 {
+			pCloseDesktop.Call(cur)
+		}
+		cur = h
 	}
-	if hDesk != 0 {
-		pSetThreadDesktop.Call(hDesk)
-		defer pCloseDesktop.Call(hDesk)
-	}
+	defer func() {
+		if cur != 0 {
+			pCloseDesktop.Call(cur)
+		}
+	}()
 
+	attach()
 	res["desktop_before"] = inputDesktopName()
+	res["foreground_before"] = foregroundProcess()
+	logger.Printf("unlock: before: desktop=%q foreground=%q", inputDesktopName(), foregroundProcess())
 
 	if capture {
 		if img := captureWinlogon(logger); img != nil {
@@ -227,33 +244,42 @@ func unlockDesktopPhase(logger *log.Logger, result string, capture bool) int {
 		}
 	}
 
-	// A passwordless account needs: a key to dismiss the LockApp curtain, then
-	// Enter to activate "Sign in". Try a few rounds, checking for success.
 	unlocked := false
-	for round := 0; round < 5 && !unlocked; round++ {
+	for round := 0; round < 8 && !unlocked; round++ {
+		attach() // follow the input desktop across the Default -> Winlogon switch
 		tapKey(vkSpace)
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		tapKey(vkReturn)
 		time.Sleep(1500 * time.Millisecond)
-		if name := inputDesktopName(); name == "Default" {
-			unlocked = true
-		}
-		logger.Printf("unlock: round %d, input desktop=%q", round, inputDesktopName())
+		unlocked = !stillLocked()
+		logger.Printf("unlock: round %d: desktop=%q foreground=%q unlocked=%v",
+			round, inputDesktopName(), foregroundProcess(), unlocked)
 	}
 
+	attach()
 	res["desktop_after"] = inputDesktopName()
+	res["foreground_after"] = foregroundProcess()
 	res["unlocked"] = unlocked
 	if !unlocked {
-		res["note"] = "sent keys but the input desktop is still not Default; the account may have a password or a different sign-in UI"
+		res["note"] = "sent keys but the PC still looks locked (lock screen or sign-in UI in front); " +
+			"the account may have a password or a different sign-in UI"
 	}
 	writeResult(result, res)
 	logger.Printf("unlock: desktop phase done, unlocked=%v", unlocked)
 	return 0
 }
 
-func mustUTF16(s string) *uint16 {
-	p, _ := windows.UTF16PtrFromString(s)
-	return p
+// stillLocked reports whether the PC is still on the lock screen or sign-in UI:
+// a secure desktop other than Default, or LockApp/LogonUI in the foreground.
+func stillLocked() bool {
+	if name := inputDesktopName(); name != "" && !strings.EqualFold(name, "Default") {
+		return true
+	}
+	switch strings.ToLower(foregroundProcess()) {
+	case "lockapp.exe", "logonui.exe":
+		return true
+	}
+	return false
 }
 
 // tapKey presses and releases a virtual key via keybd_event (simple and works
@@ -262,6 +288,35 @@ func tapKey(vk uintptr) {
 	pKeybdEvent.Call(vk, 0, 0, 0)
 	time.Sleep(40 * time.Millisecond)
 	pKeybdEvent.Call(vk, 0, keyeventfKeyUp, 0)
+}
+
+// foregroundProcess returns the base name of the process owning the foreground
+// window on the thread's current desktop (e.g. "LockApp.exe"), or "".
+func foregroundProcess() string {
+	hwnd, _, _ := pGetForegroundWindow.Call()
+	if hwnd == 0 {
+		return ""
+	}
+	var pid uint32
+	pGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if pid == 0 {
+		return ""
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return ""
+	}
+	defer windows.CloseHandle(h)
+	name := make([]uint16, windows.MAX_PATH)
+	size := uint32(len(name))
+	if windows.QueryFullProcessImageName(h, 0, &name[0], &size) != nil {
+		return ""
+	}
+	full := windows.UTF16ToString(name[:size])
+	if i := strings.LastIndexAny(full, `\/`); i >= 0 {
+		return full[i+1:]
+	}
+	return full
 }
 
 // inputDesktopName returns the name of the current input desktop (e.g.

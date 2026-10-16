@@ -295,7 +295,7 @@ func (winUnlock) Unlock(capture bool) (map[string]any, error) {
 	}
 
 	// The SYSTEM task and its desktop child write the result; poll for it.
-	deadline := time.Now().Add(25 * time.Second)
+	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
 		if b, err := os.ReadFile(resPath); err == nil && len(b) > 0 {
 			var res map[string]any
