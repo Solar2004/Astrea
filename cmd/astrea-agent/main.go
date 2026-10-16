@@ -400,11 +400,23 @@ func run() *log.Logger {
 	// Fine-grained control layer 2 (UI Automation) and layer 3 (local vision
 	// model). ui.* runs in the desktop session (gui caps / forwarded). vision
 	// runs here and dispatches screenshot + click through the guard.
-	visionMgr := capability.NewVisionManager(capability.VisionConfig(cfg.Vision), logger.Printf)
-	capability.RegisterVision(reg, visionMgr, func(ctx context.Context, method string, args json.RawMessage) (any, error) {
+	visionMgr := capability.NewVisionManager(capability.VisionConfig{
+		Endpoint: cfg.Vision.Endpoint, Model: cfg.Vision.Model, APIKey: cfg.Vision.APIKey,
+		Serve: cfg.Vision.Serve, IdleStopSec: cfg.Vision.IdleStopSec, Coords: cfg.Vision.Coords,
+	}, logger.Printf)
+	visionProv := &capability.Provisioner{
+		Mgr: visionMgr, Dir: filepath.Join(cfg.DataDir, "vision"), Dloads: downloads,
+		StateFn: filepath.Join(cfg.DataDir, "vision-setup.json"), Logf: logger.Printf,
+		ModelURL: cfg.Vision.ModelURL, MMProjURL: cfg.Vision.MMProjURL, Ctx: ctx,
+	}
+	capability.RegisterVision(reg, visionMgr, visionProv, func(ctx context.Context, method string, args json.RawMessage) (any, error) {
 		return checked(ctx, method, args, func(protocol.StreamChunk) {})
 	})
 	go visionMgr.Loop(ctx) // auto-stop the model when idle; starts nothing by itself
+	visionProv.Load()      // resume auto-provisioning if it was switched on before
+	if cfg.Vision.AutoProvision {
+		_ = visionProv.SetOn(true) // factory default: provision on first run
+	}
 	// Scheduled calls ("lock at 08:00", "run task.x every 30m"), in the PC's local time.
 	sched := schedule.Open(filepath.Join(cfg.DataDir, "schedule.json"), func(ctx context.Context, method string, args json.RawMessage) (any, error) {
 		return checked(ctx, method, args, func(protocol.StreamChunk) {})

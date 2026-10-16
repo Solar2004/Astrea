@@ -44,12 +44,15 @@ type Config struct {
 
 // VisionConfig configures the layer-3 vision model (see capability.VisionConfig).
 type VisionConfig struct {
-	Endpoint    string   `json:"endpoint,omitempty"`
-	Model       string   `json:"model,omitempty"`
-	APIKey      string   `json:"api_key,omitempty"`
-	Serve       []string `json:"serve,omitempty"`
-	IdleStopSec int      `json:"idle_stop_sec,omitempty"`
-	Coords      string   `json:"coords,omitempty"`
+	Endpoint      string   `json:"endpoint,omitempty"`
+	Model         string   `json:"model,omitempty"`
+	APIKey        string   `json:"api_key,omitempty"`
+	Serve         []string `json:"serve,omitempty"`
+	IdleStopSec   int      `json:"idle_stop_sec,omitempty"`
+	Coords        string   `json:"coords,omitempty"`
+	AutoProvision bool     `json:"auto_provision,omitempty"`
+	ModelURL      string   `json:"model_url,omitempty"`
+	MMProjURL     string   `json:"mmproj_url,omitempty"`
 }
 
 // Permission modes.

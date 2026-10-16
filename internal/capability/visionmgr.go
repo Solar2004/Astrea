@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -38,19 +39,50 @@ func NewVisionManager(cfg VisionConfig, logf func(string, ...any)) *VisionManage
 }
 
 // Configured reports whether a model endpoint is set at all.
-func (m *VisionManager) Configured() bool { return m.cfg.Endpoint != "" }
+func (m *VisionManager) Configured() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cfg.Endpoint != ""
+}
+
+// autoConfigure wires Serve/Endpoint/Coords from a provisioned model dir, if
+// the operator did not already set them by hand. Called once provisioning
+// finishes, so vision.* starts working with no manual config.
+func (m *VisionManager) autoConfigure(dir, llamaServer string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.cfg.Serve) == 0 {
+		m.cfg.Serve = []string{llamaServer,
+			"-m", filepath.Join(dir, "model.gguf"),
+			"--mmproj", filepath.Join(dir, "mmproj.gguf"),
+			"-ngl", "99", "--host", "127.0.0.1", "--port", "8100"}
+	}
+	if m.cfg.Endpoint == "" {
+		m.cfg.Endpoint = "http://127.0.0.1:8100/v1/chat/completions"
+	}
+	if m.cfg.Model == "" {
+		m.cfg.Model = "ui-tars"
+	}
+	if m.cfg.Coords == "" {
+		m.cfg.Coords = "pixel" // the llama.cpp GGUF answers in image pixels
+	}
+}
 
 // canServe reports whether we know how to launch the model ourselves.
-func (m *VisionManager) canServe() bool { return len(m.cfg.Serve) > 0 }
+// Caller must NOT hold m.mu.
+func (m *VisionManager) canServe() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.cfg.Serve) > 0
+}
 
 func (m *VisionManager) running() bool {
 	return m.cmd != nil && m.cmd.Process != nil && m.cmd.ProcessState == nil
 }
 
-// baseURL derives the server root from the chat/completions endpoint, so we can
-// poll /v1/models for readiness.
-func (m *VisionManager) modelsURL() string {
-	e := m.cfg.Endpoint
+// modelsURLFrom derives the server root from the chat/completions endpoint, so
+// we can poll /v1/models for readiness.
+func modelsURLFrom(e string) string {
 	if i := strings.Index(e, "/chat/completions"); i >= 0 {
 		return e[:i] + "/models"
 	}
@@ -59,12 +91,15 @@ func (m *VisionManager) modelsURL() string {
 
 // ready reports whether the server answers (model loaded).
 func (m *VisionManager) ready(ctx context.Context) bool {
-	req, err := http.NewRequestWithContext(ctx, "GET", m.modelsURL(), nil)
+	m.mu.Lock()
+	endpoint, key := m.cfg.Endpoint, m.cfg.APIKey
+	m.mu.Unlock()
+	req, err := http.NewRequestWithContext(ctx, "GET", modelsURLFrom(endpoint), nil)
 	if err != nil {
 		return false
 	}
-	if m.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+m.cfg.APIKey)
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	cl := &http.Client{Timeout: 3 * time.Second}
 	resp, err := cl.Do(req)
@@ -183,20 +218,21 @@ func (m *VisionManager) Status(ctx context.Context) map[string]any {
 		pid = m.cmd.Process.Pid
 	}
 	started, last = m.started, m.lastUse
+	idle := m.cfg.IdleStopSec
+	model, endpoint, nServe := m.cfg.Model, m.cfg.Endpoint, len(m.cfg.Serve)
 	m.mu.Unlock()
 
-	idle := m.cfg.IdleStopSec
 	if idle <= 0 {
 		idle = 300
 	}
 	out := map[string]any{
-		"configured":    m.Configured(),
-		"can_serve":     m.canServe(),
+		"configured":    endpoint != "",
+		"can_serve":     nServe > 0,
 		"running":       running,
-		"ready":         m.Configured() && m.ready(ctx),
+		"ready":         endpoint != "" && m.ready(ctx),
 		"idle_stop_sec": idle,
-		"model":         m.cfg.Model,
-		"endpoint":      m.cfg.Endpoint,
+		"model":         model,
+		"endpoint":      endpoint,
 	}
 	if running {
 		out["pid"] = pid

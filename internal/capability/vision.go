@@ -62,12 +62,16 @@ type VisionLocate struct {
 	Mgr      *VisionManager
 }
 
-// RegisterVision adds vision.locate/start/stop/status, all sharing one manager.
-func RegisterVision(r *Registry, mgr *VisionManager, dispatch Dispatcher) {
+// RegisterVision adds vision.locate/start/stop/status/setup, all sharing one
+// manager (and provisioner, which may be nil if auto-provisioning is unwired).
+func RegisterVision(r *Registry, mgr *VisionManager, prov *Provisioner, dispatch Dispatcher) {
 	r.Register(VisionLocate{Cfg: mgr.cfg, Dispatch: dispatch, Mgr: mgr})
 	r.Register(VisionStart{Mgr: mgr})
 	r.Register(VisionStop{Mgr: mgr})
-	r.Register(VisionStatus{Mgr: mgr})
+	r.Register(VisionStatus{Mgr: mgr, Prov: prov})
+	if prov != nil {
+		r.Register(VisionSetup{Prov: prov})
+	}
 }
 
 func (VisionLocate) Name() string { return "vision.locate" }
@@ -313,7 +317,10 @@ func (c VisionStop) Invoke(_ context.Context, _ json.RawMessage, _ Emit) (any, e
 // --- vision.status ---
 
 // VisionStatus reports whether the model runs and its resource use.
-type VisionStatus struct{ Mgr *VisionManager }
+type VisionStatus struct {
+	Mgr  *VisionManager
+	Prov *Provisioner
+}
 
 func (VisionStatus) Name() string { return "vision.status" }
 
@@ -327,5 +334,42 @@ func (VisionStatus) Describe() Descriptor {
 }
 
 func (c VisionStatus) Invoke(ctx context.Context, _ json.RawMessage, _ Emit) (any, error) {
-	return c.Mgr.Status(ctx), nil
+	st := c.Mgr.Status(ctx)
+	if c.Prov != nil {
+		st["provision"] = c.Prov.Status()
+	}
+	return st, nil
+}
+
+// --- vision.setup ---
+
+// VisionSetup turns auto-provisioning (download + wire-up) on or off.
+type VisionSetup struct{ Prov *Provisioner }
+
+func (VisionSetup) Name() string { return "vision.setup" }
+
+func (VisionSetup) Describe() Descriptor {
+	return Descriptor{
+		Name: "vision.setup",
+		Description: "Turn on (or off) automatic setup of the local vision model on this PC. With on=true, the agent downloads " +
+			"the model (and, on Windows, the llama.cpp CUDA runtime) by itself as soon as it has internet — resumably, in the " +
+			"background, retrying until done — then wires vision.serve automatically so vision.locate just works. The switch is " +
+			"remembered across restarts. Without arguments, reports the setup progress (download MB, phase, ready).",
+		InputSchema: json.RawMessage(`{"type": "object", "properties": {"on": {"type": "boolean", "description": "true: start/keep auto-setup. false: stop it. Omit: report progress."}}}`),
+	}
+}
+
+func (c VisionSetup) Invoke(ctx context.Context, payload json.RawMessage, _ Emit) (any, error) {
+	var req struct {
+		On *bool `json:"on"`
+	}
+	if err := decode(payload, &req); err != nil {
+		return nil, err
+	}
+	if req.On != nil {
+		if err := c.Prov.SetOn(*req.On); err != nil {
+			return nil, internal(err)
+		}
+	}
+	return c.Prov.Status(), nil
 }

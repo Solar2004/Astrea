@@ -74,6 +74,24 @@ UI‑TARS no responde en píxeles: usa su plantilla de *grounding* y devuelve
 (`coords: "norm1000"`, por defecto). Un modelo que devuelva píxeles de la imagen
 (algunos Qwen2.5‑VL) se configura con `coords: "pixel"`.
 
+## Auto‑instalación (un interruptor) — `vision.setup`
+
+Lo más fácil: no bajes ni configures nada a mano. Llama una vez:
+
+```jsonc
+vision.setup { "on": true }
+```
+
+El agente, en cuanto tenga internet, **descarga solo** el modelo (y en Windows
+el runtime llama.cpp CUDA) en segundo plano, reanudable, reintentando hasta
+terminar, y luego **autoconfigura** `serve`/`endpoint`/`coords`. A partir de ahí
+`vision.locate` funciona. El interruptor se recuerda entre reinicios, así que
+una descarga a medias continúa sola. `vision.setup` sin argumentos (o
+`vision.status`) muestra el progreso (MB bajados, fase, `ready`).
+
+Para activarlo de fábrica al actualizar, pon `"auto_provision": true` dentro de
+`vision` en la config. URLs del modelo configurables con `model_url`/`mmproj_url`.
+
 ## Config: arrancar el modelo bajo demanda
 
 El modelo **no corre por defecto** (ocupa GPU). Astrea lo arranca cuando la IA
