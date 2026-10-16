@@ -108,7 +108,15 @@ var (
 // the password/PIN box or a UAC prompt is showing, input goes to a secure
 // desktop ("Winlogon") we cannot even open.
 func screenLocked(process string) bool {
-	if strings.EqualFold(process, "LockApp.exe") {
+	if strings.EqualFold(process, "LockApp.exe") || strings.EqualFold(process, "LogonUI.exe") {
+		return true
+	}
+	// Locked with the monitor asleep: the curtain is up but it is not the
+	// foreground window, and the input desktop still reads "Default". A signed-in
+	// desktop always has *some* foreground window (at worst Program Manager), so
+	// none at all means the session is not usable — treat it as locked, or the
+	// agent would hand back a black screenshot and never try to sign in.
+	if hwnd, _, _ := procGetForegroundWindow.Call(); hwnd == 0 {
 		return true
 	}
 	const desktopReadObjects = 0x0001

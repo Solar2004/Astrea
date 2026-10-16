@@ -278,6 +278,10 @@ func stillLocked() bool {
 	switch strings.ToLower(foregroundProcess()) {
 	case "lockapp.exe", "logonui.exe":
 		return true
+	case "":
+		// Locked with the monitor asleep: no foreground window at all. A
+		// signed-in desktop always has one, so keep pressing keys.
+		return true
 	}
 	return false
 }
