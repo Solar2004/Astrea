@@ -17,6 +17,10 @@ func badRequest(err error) error {
 	return &protocol.Error{Code: protocol.CodeBadRequest, Message: err.Error()}
 }
 
+func badRequestMsg(msg string) error {
+	return &protocol.Error{Code: protocol.CodeBadRequest, Message: msg}
+}
+
 func decode(payload json.RawMessage, v any) error {
 	if len(payload) == 0 {
 		return nil

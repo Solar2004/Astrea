@@ -5,8 +5,10 @@
 package power
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -25,6 +27,8 @@ const (
 // Keeper applies an awake mode. Busy is polled in auto mode.
 type Keeper struct {
 	Busy func() bool
+	// Path, when set, keeps the mode chosen with SetMode across restarts.
+	Path string
 
 	mu      sync.Mutex
 	mode    string
@@ -38,7 +42,7 @@ type sleepInhibitor interface{ set(on bool) error }
 // NewKeeper starts a keeper in the given mode ("" = auto).
 func NewKeeper(mode string, busy func() bool) (*Keeper, error) {
 	k := &Keeper{Busy: busy, inhib: newInhibitor()}
-	if err := k.SetMode(mode); err != nil {
+	if err := k.set(mode); err != nil {
 		return nil, err
 	}
 	go func() {
@@ -49,8 +53,36 @@ func NewKeeper(mode string, busy func() bool) (*Keeper, error) {
 	return k, nil
 }
 
-// SetMode switches the awake mode and applies it immediately.
+// Restore loads the mode saved at path (if any) and saves later changes there.
+// A mode set remotely (power.awake) then survives agent restarts and updates.
+func (k *Keeper) Restore(path string) {
+	k.mu.Lock()
+	k.Path = path
+	k.mu.Unlock()
+	var saved struct {
+		Mode string `json:"mode"`
+	}
+	if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &saved) == nil && saved.Mode != "" {
+		_ = k.set(saved.Mode)
+	}
+}
+
+// SetMode switches the awake mode, applies it immediately and saves it.
 func (k *Keeper) SetMode(mode string) error {
+	if err := k.set(mode); err != nil {
+		return err
+	}
+	k.mu.Lock()
+	path, mode := k.Path, k.mode
+	k.mu.Unlock()
+	if path != "" {
+		data, _ := json.Marshal(map[string]string{"mode": mode})
+		return os.WriteFile(path, data, 0o644)
+	}
+	return nil
+}
+
+func (k *Keeper) set(mode string) error {
 	if mode == "" {
 		mode = AwakeAuto
 	}
@@ -100,6 +132,9 @@ type Idle struct {
 	UserActive bool `json:"user_active"`
 	// Why explains the verdict in a few words.
 	Why string `json:"why,omitempty"`
+	// Detector: "input-patterns" (hooks: injected input dropped, mouse strokes
+	// analysed) or "idle-timer" (the OS last-input time, the fallback).
+	Detector string `json:"detector,omitempty"`
 }
 
 // presence tells a person at the keyboard from everything else that also
@@ -176,8 +211,16 @@ func (p *presence) loop() {
 	}
 }
 
+// hooks is the input-pattern detector; hooksOn once it is installed.
+var (
+	hooks   tracker
+	hooksOn bool
+)
+
 // UserIdle reports whether a person is using the machine. The first call
-// starts a background sampler; until it has history, any recent input counts.
+// installs the input hooks (Windows) and starts the idle-timer sampler, which
+// is the fallback while the hooks have no history or when they are missing
+// input the OS saw.
 func UserIdle(activeThreshold time.Duration) (Idle, error) {
 	d, err := idleTime()
 	if err != nil {
@@ -185,19 +228,41 @@ func UserIdle(activeThreshold time.Duration) (Idle, error) {
 	}
 	now := time.Now()
 	title, proc := foreground()
-	out := Idle{Foreground: title, Process: proc}
+	out := Idle{Foreground: title, Process: proc, Detector: "idle-timer"}
 
 	pres.mu.Lock()
 	fresh := !pres.started
 	if fresh {
 		pres.started = true
 		go pres.loop()
+		hooks.started = now
+		hooksOn = startHooks(&hooks)
 	}
 	pres.sample(now, d)
 	idle, active, why := pres.verdict(now, activeThreshold)
 	pres.mu.Unlock()
 	if fresh && d < activeThreshold && len(pres.human) > 0 {
 		active, why = true, "recent input (no history yet)"
+	}
+
+	if hooksOn {
+		hooks.mu.Lock()
+		// Trust the hooks once they have watched a whole threshold, and only
+		// while they see what the OS sees (Windows drops a hook it deems slow).
+		osLast := now.Add(-d)
+		seen := hooks.lastAny
+		if seen.Before(hooks.started) {
+			seen = hooks.started
+		}
+		healthy := osLast.Sub(seen) < 5*time.Second
+		if healthy && now.Sub(hooks.started) >= activeThreshold {
+			idle, active, why = hooks.verdict(now, activeThreshold)
+			if d > idle {
+				idle = d // the OS saw nothing at all for longer
+			}
+			out.Detector = "input-patterns"
+		}
+		hooks.mu.Unlock()
 	}
 	out.IdleSec = idle.Seconds()
 

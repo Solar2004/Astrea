@@ -3,9 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +48,12 @@ func guiCaps() []capability.Capability {
 		capability.PanelControl{},
 		capability.ScreenCapture{},
 		capability.SysIdle{},
+		capability.ClipboardGet{},
+		capability.ClipboardSet{},
+		capability.ClipboardHistory{},
+		capability.UISnapshot{},
+		capability.UIFind{},
+		capability.UIAct{},
 	}
 }
 
@@ -52,11 +62,32 @@ func guiCaps() []capability.Capability {
 // "BitBlt failed". sys.idle is deliberately NOT here: it is the read used to
 // decide whether the PC is locked, and panel.control is the owner's switch.
 func needsDesktop(name string) bool {
-	switch name {
-	case "sys.idle", "panel.control":
-		return false
+	switch {
+	case name == "sys.idle", name == "panel.control", strings.HasPrefix(name, "clipboard."):
+		return false // the clipboard works on a locked session too
 	}
 	return true
+}
+
+// desktopAction: a call that means someone is working on the desktop, which
+// postpones the standby relock (session.lock hold).
+func desktopAction(method string) bool {
+	switch {
+	case strings.HasPrefix(method, "mouse."), strings.HasPrefix(method, "key."),
+		strings.HasPrefix(method, "input."), strings.HasPrefix(method, "record."),
+		method == "screen.capture", method == "gui.exec", method == "clipboard.set":
+		return true
+	}
+	return false
+}
+
+// peekOnly: a screenshot that only looks (the panel's thumbnails).
+func peekOnly(args string) bool {
+	var p struct {
+		Peek bool `json:"peek"`
+	}
+	_ = json.Unmarshal([]byte(args), &p)
+	return p.Peek
 }
 
 // unlockGate makes sure the PC is signed in before a desktop action runs, so
@@ -162,6 +193,11 @@ func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *
 		reg.Register(c)
 	}
 	reg.Register(capability.Exec{})
+	reg.Register(capability.DesktopLock{})
+	reg.Register(capability.RecordStartRaw{})
+	reg.Register(capability.RecordCaptureRaw{})
+	reg.Register(capability.RecordingLocal{})
+	capability.Clipboard.Start(ctx, filepath.Join(cfg.DataDir, "clipboard-"+sessionUser()+".json"))
 	reg.Register(agentRestart{stop: stop})
 
 	guard := security.NewGuard(cfg.EffectiveAllow(), cfg.Deny)
@@ -181,4 +217,53 @@ func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+}
+
+// sessionUser names the clipboard history file: each person's copies are
+// their own, even on a PC shared by several accounts.
+func sessionUser() string {
+	for _, k := range []string{"USERNAME", "USER"} {
+		if u := os.Getenv(k); u != "" {
+			return filepath.Base(u)
+		}
+	}
+	return "user"
+}
+
+// bridgeRecSource forwards recording to the GUI helper, which owns the input
+// hooks, and returns the captured events so the main agent can build the task.
+type bridgeRecSource struct{ b *guibridge.Bridge }
+
+func (s bridgeRecSource) Start() error {
+	_, err := s.b.Call(context.Background(), "record.start", json.RawMessage(`{}`))
+	return err
+}
+
+func (s bridgeRecSource) StopEvents() ([]capability.RecEvent, error) {
+	res, err := s.b.Call(context.Background(), "record.capture", json.RawMessage(`{}`))
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Events []capability.RecEvent `json:"events"`
+	}
+	if err := json.Unmarshal(res.Result, &out); err != nil {
+		return nil, err
+	}
+	return out.Events, nil
+}
+
+func (s bridgeRecSource) Recording() (bool, error) {
+	res, err := s.b.Call(context.Background(), "record.state", json.RawMessage(`{}`))
+	if err != nil {
+		if errors.Is(err, guibridge.NoSession) {
+			return false, nil
+		}
+		return false, err
+	}
+	var out struct {
+		Recording bool `json:"recording"`
+	}
+	_ = json.Unmarshal(res.Result, &out)
+	return out.Recording, nil
 }

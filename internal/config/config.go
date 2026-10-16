@@ -34,6 +34,22 @@ type Config struct {
 	// checks every few hours and installs when no job or download is running),
 	// "notify" (only reports a newer version in admin.status) or "off".
 	AutoUpdate string `json:"auto_update,omitempty"`
+	// BrowserHeadless runs browser.* with no visible window. Default false:
+	// the owner and the live view see what the AI does in the browser.
+	BrowserHeadless bool `json:"browser_headless,omitempty"`
+	// Vision points vision.locate at a local GUI-grounding model served behind
+	// an OpenAI-compatible endpoint (e.g. UI-TARS on vLLM). Empty = disabled.
+	Vision VisionConfig `json:"vision,omitempty"`
+}
+
+// VisionConfig configures the layer-3 vision model (see capability.VisionConfig).
+type VisionConfig struct {
+	Endpoint    string   `json:"endpoint,omitempty"`
+	Model       string   `json:"model,omitempty"`
+	APIKey      string   `json:"api_key,omitempty"`
+	Serve       []string `json:"serve,omitempty"`
+	IdleStopSec int      `json:"idle_stop_sec,omitempty"`
+	Coords      string   `json:"coords,omitempty"`
 }
 
 // Permission modes.
@@ -48,6 +64,7 @@ var ReadOnlyAllow = []string{
 	"task.list", "task.get", "endpoint.list", "deps.check",
 	"service.status", "service.logs", "job.status", "job.logs",
 	"net.download.status", "memory.get",
+	"clipboard.get", "clipboard.history", "schedule.list", "browser.read",
 }
 
 // EffectiveAllow returns the allow list after applying Mode. An unknown mode

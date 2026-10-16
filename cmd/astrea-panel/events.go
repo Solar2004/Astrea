@@ -140,6 +140,41 @@ type machineWatch struct {
 
 const alertCooldown = 30 * time.Minute
 
+// whyBack explica por qué una PC dejó de responder, ahora que volvió: su
+// propio historial (sys.uptime) distingue un reinicio, una suspensión y un
+// simple corte de red con la PC encendida todo el rato.
+func (p *panel) whyBack(name string, off, now time.Time) string {
+	away := ago(now.Sub(off))
+	client := p.client(name)
+	if client == nil {
+		return "no respondía desde hace " + away
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	res, err := client.Call(ctx, "sys.uptime", map[string]any{"days": 1})
+	var rep struct {
+		Boot  time.Time `json:"boot"`
+		Spans []struct {
+			End     time.Time `json:"end"`
+			EndKind string    `json:"end_kind"`
+		} `json:"spans"`
+	}
+	if err != nil || json.Unmarshal(res.Result, &rep) != nil {
+		return "no respondía desde hace " + away
+	}
+	// The poll that noticed it was a few rounds after it really went away.
+	from := off.Add(-2 * time.Minute)
+	if rep.Boot.After(from) {
+		return "se reinició (sin conexión " + away + ")"
+	}
+	for _, s := range rep.Spans {
+		if s.EndKind == "sleep" && s.End.After(from) {
+			return "estuvo dormida (suspensión de Windows, " + away + ")"
+		}
+	}
+	return "la PC siguió encendida, se cortó la red " + away
+}
+
 // watch sondea la flota cada interval y registra los cambios. La primera vez
 // que ve un equipo solo fija su línea base.
 func (p *panel) watch(interval time.Duration) {
@@ -181,16 +216,19 @@ func (p *panel) watch(interval time.Duration) {
 				}
 				continue // primera vez que lo vemos: sin aviso
 			}
-			// Encendido / apagado (dos fallos seguidos antes de darlo por apagado).
+			// Encendido / apagado (tres fallos seguidos, ~1 min, antes de darlo por
+			// apagado: un corte de red de segundos no es un apagón).
 			switch {
 			case s.Online:
 				w.fails = 0
 				if !w.online {
-					emit(name, "online", "good", fmt.Sprintf("🟢 <b>%s</b> se encendió (estuvo apagado %s)", esc(name), ago(now.Sub(w.since))))
+					go func(name string, off time.Time) { // asks the agent: do not hold up the round
+						emit(name, "online", "good", fmt.Sprintf("🟢 <b>%s</b> volvió: %s", esc(name), p.whyBack(name, off, now)))
+					}(name, w.since)
 					w.online, w.since = true, now
 				}
 			case w.online:
-				if w.fails++; w.fails >= 2 {
+				if w.fails++; w.fails >= 3 {
 					emit(name, "offline", "bad", fmt.Sprintf("🔴 <b>%s</b> se apagó o perdió conexión (estuvo encendido %s)", esc(name), ago(now.Sub(w.since))))
 					w.online, w.since = false, now
 				}

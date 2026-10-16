@@ -91,5 +91,11 @@ func (Exec) Invoke(ctx context.Context, payload json.RawMessage, emit Emit) (any
 }
 
 func internal(err error) error {
+	// Keep an already-typed protocol error (e.g. "unavailable", "bad_request")
+	// instead of flattening it to "internal".
+	var pe *protocol.Error
+	if errors.As(err, &pe) {
+		return pe
+	}
 	return &protocol.Error{Code: protocol.CodeInternal, Message: err.Error()}
 }

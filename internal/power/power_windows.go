@@ -3,9 +3,11 @@
 package power
 
 import (
+	"errors"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -18,6 +20,9 @@ var (
 	procSetThreadExecutionState = kernel32.NewProc("SetThreadExecutionState")
 	procGetTickCount            = kernel32.NewProc("GetTickCount")
 	procGetLastInputInfo        = user32.NewProc("GetLastInputInfo")
+	procPowerCreateRequest      = kernel32.NewProc("PowerCreateRequest")
+	procPowerSetRequest         = kernel32.NewProc("PowerSetRequest")
+	procPowerClearRequest       = kernel32.NewProc("PowerClearRequest")
 	procGetForegroundWindow     = user32.NewProc("GetForegroundWindow")
 	procGetWindowTextW          = user32.NewProc("GetWindowTextW")
 	procGetWindowThreadProcess  = user32.NewProc("GetWindowThreadProcessId")
@@ -28,8 +33,57 @@ const (
 	esSystemRequired = 0x00000001
 )
 
-// inhibitor holds ES_SYSTEM_REQUIRED from one locked OS thread: the execution
-// state belongs to the calling thread, and Go would otherwise migrate us.
+// Power request types (POWER_REQUEST_TYPE).
+const (
+	powerRequestSystemRequired    = 1
+	powerRequestExecutionRequired = 3
+)
+
+// reasonContext is REASON_CONTEXT with a simple string (the union is sized
+// for its detailed variant).
+type reasonContext struct {
+	version uint32
+	flags   uint32
+	reason  *uint16
+	_       [2]uintptr
+}
+
+// powerRequest is a handle-based power request: what Windows honours on
+// Modern Standby PCs (S0 low-power idle), where the screen turning off puts
+// the whole PC in standby and ES_SYSTEM_REQUIRED does not stop it.
+// SystemRequired keeps it out of the low-power state, ExecutionRequired keeps
+// our process from being suspended. On AC power neither expires; it shows in
+// `powercfg /requests` under SYSTEM and EXECUTION.
+var powerRequest = sync.OnceValue(func() uintptr {
+	reason, _ := windows.UTF16PtrFromString("Astrea: keep this PC reachable for remote work")
+	ctx := reasonContext{version: 0, flags: 1, reason: reason} // POWER_REQUEST_CONTEXT_SIMPLE_STRING
+	h, _, _ := procPowerCreateRequest.Call(uintptr(unsafe.Pointer(&ctx)))
+	if h == uintptr(windows.InvalidHandle) {
+		return 0
+	}
+	return h
+})
+
+func setPowerRequest(on bool) error {
+	h := powerRequest()
+	if h == 0 {
+		return errors.New("PowerCreateRequest failed")
+	}
+	proc := procPowerClearRequest
+	if on {
+		proc = procPowerSetRequest
+	}
+	for _, typ := range []uintptr{powerRequestSystemRequired, powerRequestExecutionRequired} {
+		if r, _, err := proc.Call(h, typ); r == 0 && on {
+			return err
+		}
+	}
+	return nil
+}
+
+// inhibitor holds a power request and, as a second layer, ES_SYSTEM_REQUIRED
+// from one locked OS thread: the execution state belongs to the calling
+// thread, and Go would otherwise migrate us.
 type inhibitor struct{ req chan inhibitReq }
 
 type inhibitReq struct {
@@ -46,9 +100,10 @@ func newInhibitor() inhibitor {
 			if r.on {
 				flags |= esSystemRequired
 			}
+			preqErr := setPowerRequest(r.on)
 			ret, _, err := procSetThreadExecutionState.Call(flags)
-			if ret == 0 {
-				r.done <- err
+			if ret == 0 && preqErr != nil {
+				r.done <- errors.Join(preqErr, err)
 				continue
 			}
 			r.done <- nil

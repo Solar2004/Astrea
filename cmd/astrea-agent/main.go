@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Solar2004/Astrea/internal/auth"
+	"github.com/Solar2004/Astrea/internal/browser"
 	"github.com/Solar2004/Astrea/internal/capability"
 	"github.com/Solar2004/Astrea/internal/config"
 	"github.com/Solar2004/Astrea/internal/download"
@@ -31,6 +33,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/memory"
 	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
+	"github.com/Solar2004/Astrea/internal/schedule"
 	"github.com/Solar2004/Astrea/internal/security"
 	"github.com/Solar2004/Astrea/internal/supervise"
 	"github.com/Solar2004/Astrea/internal/task"
@@ -205,7 +208,11 @@ func run() *log.Logger {
 	// lastAction: the AI's latest action here, for the panel's cards. The
 	// panel's own polling and its "from":"panel" input are not the AI.
 	var lastAction atomic.Value // security.Entry
+	hold := &capability.LockHold{}
 	audit.Notify(func(e security.Entry) {
+		if desktopAction(e.Method) && !peekOnly(e.Args) {
+			hold.Touch() // the AI (or the owner) is working on the desktop: do not relock yet
+		}
 		if e.Work != "" {
 			ups.Count(time.Now())
 		}
@@ -253,24 +260,40 @@ func run() *log.Logger {
 		for _, c := range guiCaps() {
 			reg.Register(c)
 		}
+		capability.Clipboard.Start(ctx, filepath.Join(cfg.DataDir, "clipboard-"+sessionUser()+".json"))
 	}
+	// ui.* lives in the desktop session: in full it is in guiCaps() above; in
+	// headless the gui helper serves it and registerGUIProxies forwards it.
 	// Dynamic endpoints.
 	reg.Register(capability.EndpointCreate{Mgr: dyn})
 	reg.Register(capability.EndpointList{Mgr: dyn})
 	reg.Register(capability.EndpointDelete{Mgr: dyn})
 	// AI-defined tasks: each becomes its own capability (task.<name>). Macro
 	// steps go through the same guard and audit log as direct calls.
-	tasks := task.NewManager(cfg.DataDir)
-	tasks.SetDispatch(func(ctx context.Context, method string, payload json.RawMessage, emit task.Emit) (any, error) {
+	// checked runs a capability from inside the agent (macro steps, schedules)
+	// through the same guard and audit log as a call from the hub.
+	checked := func(ctx context.Context, method string, payload json.RawMessage, emit capability.Emit) (any, error) {
 		if err := guard.Check(method); err != nil {
 			audit.Log(ctx, method, payload, err)
 			return nil, err
 		}
-		res, err := reg.Dispatch(ctx, method, payload, capability.Emit(emit))
+		res, err := reg.Dispatch(ctx, method, payload, emit)
 		audit.Log(ctx, method, payload, err)
 		return res, err
+	}
+	tasks := task.NewManager(cfg.DataDir)
+	tasks.SetDispatch(func(ctx context.Context, method string, payload json.RawMessage, emit task.Emit) (any, error) {
+		return checked(ctx, method, payload, capability.Emit(emit))
 	})
 	capability.RegisterTasks(reg, tasks)
+	// Record & replay ("TinyTask"): capture real input, save it as a macro
+	// task. The hooks live in the desktop session, so on a headless agent the
+	// source forwards to the GUI helper; the task is still saved here.
+	recSrc := capability.Local
+	if bridge != nil {
+		recSrc = bridgeRecSource{b: bridge}
+	}
+	capability.RegisterRecord(reg, tasks, recSrc)
 	dyn.Tasks = func(ctx context.Context, name string, args json.RawMessage, emit func(protocol.StreamChunk)) (any, error) {
 		if err := guard.Check("task." + name); err != nil {
 			return nil, err
@@ -331,15 +354,63 @@ func run() *log.Logger {
 	if err != nil {
 		logger.Fatalf("keep_awake: %v", err)
 	}
+	keeper.Restore(filepath.Join(cfg.DataDir, "awake.json")) // a mode set remotely wins over the config
 	reg.Register(capability.PowerAwake{Keeper: keeper})
 	reg.Register(capability.PowerWake{})
 	reg.Register(capability.PowerAction{})
+	reg.Register(capability.PowerStandby{})
 	// Lock screen (passwordless aula PCs): keep it from locking, and sign back
 	// in from it. Both run in this (headless/full) process: it is the elevated
 	// desktop user, so it can touch HKLM+HKCU and launch a SYSTEM task; neither
 	// needs the GUI helper.
 	reg.Register(capability.SessionNoLock{})
 	reg.Register(capability.SessionUnlock{})
+	// Standby: lock now and keep it locked for passers-by while the AI can
+	// still work on it (lockhold.go). Locking must happen in the desktop session.
+	hold.Path = filepath.Join(cfg.DataDir, "lockhold.json")
+	hold.Logf = logger.Printf
+	hold.Lock = func(ctx context.Context) error {
+		_, err := capability.DesktopLock{}.Invoke(ctx, nil, nil)
+		return err
+	}
+	hold.Idle = func(context.Context) (power.Idle, error) { return power.UserIdle(2 * time.Minute) }
+	if bridge != nil {
+		hold.Lock = func(ctx context.Context) error {
+			_, err := bridge.Call(ctx, "session.lock", json.RawMessage(`{}`))
+			if errors.Is(err, guibridge.NoSession) {
+				return nil // nobody signed in: it is already at the sign-in screen
+			}
+			return err
+		}
+		hold.Idle = func(ctx context.Context) (power.Idle, error) {
+			var idle power.Idle
+			res, err := bridge.Call(ctx, "sys.idle", json.RawMessage(`{}`))
+			if err == nil {
+				err = json.Unmarshal(res.Result, &idle)
+			}
+			return idle, err
+		}
+	}
+	reg.Register(capability.SessionLock{Hold: hold})
+	go hold.Run(ctx)
+	// Browser: a real Chromium Astrea drives by CDP (navigate, read as text, click, fill, JS).
+	br := &browser.Browser{DataDir: cfg.DataDir, Headless: cfg.BrowserHeadless}
+	defer br.Close()
+	capability.RegisterBrowser(reg, br)
+	// Fine-grained control layer 2 (UI Automation) and layer 3 (local vision
+	// model). ui.* runs in the desktop session (gui caps / forwarded). vision
+	// runs here and dispatches screenshot + click through the guard.
+	visionMgr := capability.NewVisionManager(capability.VisionConfig(cfg.Vision), logger.Printf)
+	capability.RegisterVision(reg, visionMgr, func(ctx context.Context, method string, args json.RawMessage) (any, error) {
+		return checked(ctx, method, args, func(protocol.StreamChunk) {})
+	})
+	go visionMgr.Loop(ctx) // auto-stop the model when idle; starts nothing by itself
+	// Scheduled calls ("lock at 08:00", "run task.x every 30m"), in the PC's local time.
+	sched := schedule.Open(filepath.Join(cfg.DataDir, "schedule.json"), func(ctx context.Context, method string, args json.RawMessage) (any, error) {
+		return checked(ctx, method, args, func(protocol.StreamChunk) {})
+	}, logger.Printf)
+	capability.RegisterSchedule(reg, sched)
+	go sched.Run(ctx)
 	// Self-update from GitHub Releases (agent.update) and restart.
 	upd := &updater{mode: orDefault(cfg.AutoUpdate, "auto"), stop: stop, logger: logger, busy: working}
 	if bridge != nil {

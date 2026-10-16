@@ -22,7 +22,9 @@ func (SysIdle) Describe() Descriptor {
 		Description: "Is someone using the controlled machine? Returns seconds since a person last used the keyboard/mouse " +
 			"(Astrea's own input does not count), the focused window and its process (e.g. RobloxPlayerBeta.exe), " +
 			"locked (the lock screen is up: nobody is using it), user_active and why. An app left open with nobody " +
-			"touching the PC is not active; neither is a single touch. Check it before heavy GPU work on a personal PC.",
+			"touching the PC is not active; neither is a single touch, a mouse jiggler, a remote tool or anti-AFK " +
+			"software moving the mouse (on Windows the agent reads the raw input: injected input is ignored and " +
+			"mouse strokes must look like a hand). Check it before heavy GPU work on a personal PC.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {"active_threshold_sec": {"type": "integer", "description": "Input within this many seconds counts as active. Default 120."}}
@@ -56,8 +58,9 @@ func (PowerAwake) Describe() Descriptor {
 	return Descriptor{
 		Name: "power.awake",
 		Description: "Keep the controlled machine from sleeping. mode=auto (default): awake while a service, job or download is running; " +
-			"always: never sleep while the agent runs; off: normal power settings. Without mode, reports the current state. " +
-			"The setting is not persisted: the agent's config keep_awake applies on restart.",
+			"always: never sleep while the agent runs (use it on PCs that must stay reachable: on Modern Standby PCs the screen " +
+			"turning off otherwise puts the whole PC to sleep); off: normal power settings. Without mode, reports the current state. " +
+			"The mode is saved and survives agent restarts and updates.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {"mode": {"type": "string", "enum": ["auto", "always", "off"]}}

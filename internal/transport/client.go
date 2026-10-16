@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Solar2004/Astrea/internal/protocol"
 	"github.com/coder/websocket"
@@ -63,7 +64,39 @@ func Dial(ctx context.Context, wsURL, token string) (*Client, error) {
 	cctx, cancel := context.WithCancel(context.Background())
 	c := &Client{url: wsURL, token: token, ws: ws, pending: map[string]*call{}, ctx: cctx, cancel: cancel}
 	go c.readLoop()
+	go c.keepalive()
 	return c, nil
+}
+
+// Keepalive timing: a connection the network silently dropped (NAT timeout,
+// Tailscale switching paths, the PC going to standby) still looks open and
+// every call on it just times out until the OS gives up on TCP, which takes
+// ~15 minutes. A ping that goes unanswered closes it so the next call redials.
+var (
+	pingEvery   = 15 * time.Second
+	pingTimeout = 8 * time.Second
+)
+
+func (c *Client) keepalive() {
+	t := time.NewTicker(pingEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-t.C:
+			c.probe()
+		}
+	}
+}
+
+// probe pings the agent and closes the connection if it does not answer.
+func (c *Client) probe() {
+	ctx, cancel := context.WithTimeout(c.ctx, pingTimeout)
+	defer cancel()
+	if err := c.ws.Ping(ctx); err != nil && c.ctx.Err() == nil {
+		c.Close()
+	}
 }
 
 // Close terminates the connection.
@@ -173,6 +206,7 @@ func (c *Client) Call(ctx context.Context, method string, payload any) (*CallRes
 	case <-ctx.Done():
 		forget()
 		c.sendCancel(id)
+		go c.probe() // a call that timed out may mean a dead connection
 		return nil, ctx.Err()
 	case <-cl.done:
 	}
