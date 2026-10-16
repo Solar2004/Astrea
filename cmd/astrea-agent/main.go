@@ -75,6 +75,11 @@ func openLog(path string) (*os.File, error) {
 }
 
 func main() {
+	// "unlock" is a self-invoked subcommand (a SYSTEM scheduled task launched by
+	// the session.unlock capability), not a normal agent start.
+	if len(os.Args) > 1 && os.Args[1] == "unlock" {
+		os.Exit(runUnlockCmd(os.Args[2:]))
+	}
 	if logger := run(); logger != nil {
 		restartAfterExit(logger)
 	}
@@ -295,6 +300,12 @@ func run() *log.Logger {
 	reg.Register(capability.PowerAwake{Keeper: keeper})
 	reg.Register(capability.PowerWake{})
 	reg.Register(capability.PowerAction{})
+	// Lock screen (passwordless aula PCs): keep it from locking, and sign back
+	// in from it. Both run in this (headless/full) process: it is the elevated
+	// desktop user, so it can touch HKLM+HKCU and launch a SYSTEM task; neither
+	// needs the GUI helper.
+	reg.Register(capability.SessionNoLock{})
+	reg.Register(capability.SessionUnlock{})
 	// Self-update from GitHub Releases (agent.update) and restart.
 	upd := &updater{mode: orDefault(cfg.AutoUpdate, "auto"), stop: stop, logger: logger, busy: working}
 	if bridge != nil {
