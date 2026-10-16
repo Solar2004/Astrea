@@ -6,6 +6,7 @@ package main
 //	GET  /api/work/shot?machine=&id=  screenshot taken when a task failed
 //	POST /api/cleanup?machine=&dry_run=  disk.cleanup
 //	GET/PUT /api/ui                   groups and view settings, shared by every browser
+//	GET  /api/thumb?machine=&w=&max_age=  small cached screenshot for cards and the wall
 //
 // The uptime lives on each agent; the panel keeps the last copy it got, so a
 // machine that is off still shows its history. Connection quality comes from
@@ -87,8 +88,14 @@ func (p *panel) uptime(ctx context.Context, name string, days int) map[string]an
 	if ok && c.Days >= days && time.Since(c.At) < time.Minute {
 		return map[string]any{"machine": name, "report": c.Report, "cached_at": c.At}
 	}
+	// The OS log can take a few seconds on the first call; a machine that has
+	// not answered lately fails fast and the cached copy is served.
+	timeout := 25 * time.Second
+	if p.workTimeout(name) < 8*time.Second {
+		timeout = 3 * time.Second
+	}
 	var raw json.RawMessage
-	_, err := p.call(ctx, name, "sys.uptime", map[string]any{"days": days}, &raw, p.workTimeout(name)+20*time.Second)
+	_, err := p.call(ctx, name, "sys.uptime", map[string]any{"days": days}, &raw, timeout)
 	if err == nil {
 		p.uptimes.put(name, cachedUptime{Report: raw, Days: days, At: time.Now()})
 		return map[string]any{"machine": name, "report": raw, "cached_at": time.Now()}
@@ -204,6 +211,73 @@ func (p *panel) net(name string) *netQuality {
 		return &q
 	}
 	return nil
+}
+
+// --- thumbnails ---
+
+// thumb is a small, recent screenshot shared by every browser looking at the
+// overview or the wall of screens, so N tabs do not mean N captures.
+type thumb struct {
+	data []byte
+	at   time.Time
+	err  error
+}
+
+var (
+	thumbsMu sync.Mutex
+	thumbs   = map[string]*thumb{}
+	thumbsIn = map[string]chan struct{}{} // capture in flight
+)
+
+// handleThumb: GET /api/thumb?machine=&w=480&max_age=20 → JPEG.
+func (p *panel) handleThumb(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("machine")
+	if p.client(name) == nil {
+		http.Error(w, errUnknownMachine.Error(), http.StatusNotFound)
+		return
+	}
+	width := queryInt(r, "w", 480, 160, 1280)
+	maxAge := time.Duration(queryInt(r, "max_age", 20, 2, 600)) * time.Second
+	key := name + "@" + strconv.Itoa(width)
+	for {
+		thumbsMu.Lock()
+		t := thumbs[key]
+		if t != nil && time.Since(t.at) < maxAge {
+			thumbsMu.Unlock()
+			if t.err != nil {
+				http.Error(w, t.err.Error(), http.StatusBadGateway)
+				return
+			}
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Captured-At", t.at.UTC().Format(time.RFC3339))
+			_, _ = w.Write(t.data)
+			return
+		}
+		if wait, busy := thumbsIn[key]; busy {
+			thumbsMu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-r.Context().Done():
+				return
+			}
+		}
+		done := make(chan struct{})
+		thumbsIn[key] = done
+		thumbsMu.Unlock()
+
+		timeout := 20 * time.Second
+		if p.workTimeout(name) < 8*time.Second {
+			timeout = 3 * time.Second
+		}
+		data, err := p.frame(context.Background(), name, width, 55, timeout)
+		thumbsMu.Lock()
+		thumbs[key] = &thumb{data: data, at: time.Now(), err: err}
+		delete(thumbsIn, key)
+		thumbsMu.Unlock()
+		close(done)
+	}
 }
 
 // --- failure screenshots, cleanup ---

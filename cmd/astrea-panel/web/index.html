@@ -398,6 +398,99 @@
   .mcard .notice .ago { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .nav-item .badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
 
+
+  /* overview: view switch, groups (collapsible), offline machines apart */
+  .ov-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 32px 0 6px; }
+  .ov-bar h2.section { margin: 0; }
+  .ov-bar .segmented, .toolbar .segmented { margin: 0; }
+  .segmented.sm button { padding: 5px 11px; font-size: 12.5px; }
+  .segmented button .icon { width: 15px; height: 15px; }
+  .segmented button:disabled { opacity: .45; cursor: default; }
+  details.group { margin-top: 14px; }
+  details.group > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 8px 4px; margin-bottom: 8px;
+                            font-size: 15px; font-weight: 650; letter-spacing: -.01em; user-select: none; border-radius: var(--radius-sm); }
+  details.group > summary::-webkit-details-marker { display: none; }
+  details.group > summary:hover { background: var(--surface-2); }
+  details.group > summary .tw { width: 16px; height: 16px; color: var(--text-3); transition: transform .15s; }
+  details.group[open] > summary .tw { transform: rotate(90deg); }
+  details.group > summary .count { font-size: 13px; color: var(--text-3); font-weight: 500; }
+  details.group.off { margin-top: 28px; }
+  details.group.off > summary { color: var(--text-2); }
+  .empty-group { color: var(--text-3); font-size: 13px; padding: 4px 6px 8px; }
+
+  /* machine card: the screen on top, compact data below */
+  a.mcard { padding: 0; gap: 0; overflow: hidden; }
+  .mcard .mbody { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 12px; flex: 1; }
+  .mcard .top { gap: 10px; }
+  .mcard .who b { font-size: 15px; }
+  .mcard .bottom { padding-top: 10px; }
+  .thumb { position: relative; aspect-ratio: 16 / 9; background: var(--surface-2); overflow: hidden; display: grid; place-items: center; }
+  .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .ph { color: var(--text-3); font-size: 12.5px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 0 12px; }
+  .thumb .ph .icon { width: 26px; height: 26px; }
+  .thumb .over { position: absolute; left: 8px; right: 8px; top: 8px; display: flex; gap: 6px; align-items: center; pointer-events: none; }
+  .thumb .over .chip { background: color-mix(in srgb, var(--surface) 86%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--shadow-sm); }
+  .thumb .over .chip.t-good { color: var(--good); } .thumb .over .chip.t-warn { color: var(--warn); } .thumb .over .chip.t-bad { color: var(--bad); }
+  .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 12px; }
+  .mini .k { display: flex; justify-content: space-between; color: var(--text-3); margin-bottom: 4px; }
+  .mini .k b { color: var(--text-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* activity squares (GitHub / Claude Code style): one per day, or per hour in the history */
+  .sq-wrap { display: grid; gap: 4px; }
+  .sq-wrap .lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); }
+  .sq { display: flex; gap: 2px; }
+  .sq i, .hgrid i { display: block; border-radius: 2px; background: var(--track); }
+  .sq i { flex: 1; min-width: 0; aspect-ratio: 1; max-width: 14px; }
+  .sq i.on, .hgrid i.on { background: color-mix(in srgb, var(--good) 30%, var(--track)); }
+  .sq i.l1, .hgrid i.l1 { background: color-mix(in srgb, var(--primary) 35%, var(--track)); }
+  .sq i.l2, .hgrid i.l2 { background: color-mix(in srgb, var(--primary) 60%, var(--track)); }
+  .sq i.l3, .hgrid i.l3 { background: color-mix(in srgb, var(--primary) 82%, var(--track)); }
+  .sq i.l4, .hgrid i.l4 { background: var(--primary); }
+  .hgrid i.crash { box-shadow: inset 0 0 0 2px var(--bad); }
+  .hgrid { display: grid; grid-template-columns: 64px repeat(24, minmax(0, 1fr)); gap: 3px; align-items: center; font-size: 11px; color: var(--text-3); }
+  .hgrid i { aspect-ratio: 1; max-height: 22px; }
+  .hgrid .day { white-space: nowrap; padding-right: 6px; font-variant-numeric: tabular-nums; }
+  .hgrid .hr { text-align: left; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--text-3); margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; background: var(--track); }
+
+  /* list view and offline rows */
+  .mlist .li.mrow { display: grid; grid-template-columns: 10px minmax(130px, 1.1fr) minmax(150px, .9fr) minmax(0, 1.2fr) auto 150px 16px; gap: 14px; color: inherit; }
+  .mlist .li.mrow:hover { background: var(--surface-2); text-decoration: none; }
+  .mrow .nm { min-width: 0; display: grid; }
+  .mrow .nm b, .mrow .wk { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow .nm small, .mrow .nums { color: var(--text-3); font-size: 12px; }
+  .mrow .nums { display: flex; gap: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mrow .wk { font-size: 12.5px; color: var(--text-2); }
+  .mrow .chev { color: var(--text-3); }
+  .mrow.off { opacity: .85; }
+
+  /* group editor */
+  .geditor .ghead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .geditor .grow { display: grid; grid-template-columns: minmax(140px, 200px) minmax(110px, 160px) 1fr auto; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--divider); }
+  .members { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; background: var(--surface-2); font-size: 12.5px; cursor: pointer; user-select: none; }
+  .mchip.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .mchip input { margin: 0; accent-color: var(--primary); }
+  .mchip.locked { cursor: default; }
+
+  /* wall of screens (Visualización) */
+  .wall { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(var(--tile, 360px), 1fr)); }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; position: relative; }
+  .tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+  .tile .cap { display: flex; align-items: center; gap: 8px; padding: 9px 12px; min-width: 0; font-size: 13px; }
+  .tile .cap b { font-weight: 650; white-space: nowrap; }
+  .tile .cap small { color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; text-align: right; }
+  .tile.pick .thumb { opacity: .55; }
+  .tile.pick.picked { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+  .tile.pick.picked .thumb { opacity: 1; }
+  .tile .tick { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+                background: var(--surface); border: 2px solid var(--border); color: var(--on-primary); }
+  .tile.picked .tick { background: var(--primary); border-color: var(--primary); }
+  .tile .tick .icon { width: 14px; height: 14px; stroke-width: 2.6; }
+  .shotcard img { display: block; width: 100%; border-radius: var(--radius-sm); margin-top: 12px; cursor: zoom-in; }
+
   @keyframes fade { from { opacity: 0; } }
   @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -419,6 +512,12 @@
     .grid { grid-template-columns: 1fr; }
     .tasks .chev { display: none; }
     .tasks .li { padding: 12px; gap: 10px; }
+    .mlist .li.mrow { grid-template-columns: 10px minmax(0, 1fr) auto 16px; }
+    .mrow .nums, .mrow .wk, .mrow .sq-wrap { display: none; }
+    .geditor .grow { grid-template-columns: 1fr auto; }
+    .geditor .grow .members { grid-column: 1 / -1; }
+    .wall { grid-template-columns: 1fr; }
+    .hgrid { grid-template-columns: 44px repeat(24, minmax(0, 1fr)); gap: 2px; }
   }
 </style>
 </head>
@@ -456,6 +555,12 @@
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 9h13M14.5 5.5 18 9l-3.5 3.5M19 15H6M9.5 11.5 6 15l3.5 3.5"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5v9a1.5 1.5 0 0 1-1.5 1.5H11l-4 4v-4h-.5A1.5 1.5 0 0 1 5 14.5z"/><path d="M8.5 8.5h7M8.5 11.5h4.5"/></symbol>
   <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.75" cy="6.5" r="1"/><circle cx="4.75" cy="12" r="1"/><circle cx="4.75" cy="17.5" r="1"/></symbol>
+  <symbol id="i-wall" viewBox="0 0 24 24"><rect x="2.5" y="4" width="8.5" height="6.5" rx="1.5"/><rect x="13" y="4" width="8.5" height="6.5" rx="1.5"/><rect x="2.5" y="13.5" width="8.5" height="6.5" rx="1.5"/><rect x="13" y="13.5" width="8.5" height="6.5" rx="1.5"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="13.5" height="11" rx="2.5"/><path d="m16 10.5 5.5-3v9l-5.5-3z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.6 6.6a8 8 0 1 0 10.8 0"/></symbol>
   <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/></symbol>
 </svg>
 
@@ -465,6 +570,7 @@
     <a class="nav-item" href="#/" data-route="overview"><svg class="icon"><use href="#i-grid"/></svg>Resumen</a>
     <a class="nav-item" href="#/tareas" data-route="tasks"><svg class="icon"><use href="#i-tasks"/></svg>Tareas<span class="end tnum" id="navTasks"></span></a>
     <a class="nav-item" href="#/avisos" data-route="events"><svg class="icon"><use href="#i-bell"/></svg>Avisos<span id="navEvents"></span></a>
+    <a class="nav-item" href="#/visual" data-route="visual"><svg class="icon"><use href="#i-wall"/></svg>Visualización</a>
     <div class="nav-label">Equipos</div>
     <nav id="navMachines"></nav>
     <div class="nav-label">Ayuda</div>
@@ -541,7 +647,27 @@ const S = {
   evOpenSeen: null, // evSeen when the notices view was opened: newer rows are highlighted
   evMachine: "",    // notices view: "" = whole fleet
   mem: {},          // machine key -> {draft, refreshing, q, programs, summary} (memory tab UI state)
+  ui: null,         // layout saved in the panel (GET/PUT /api/ui): view, groups, collapsed sections, wall
+  groupDraft: null, // group editor open: a working copy of S.ui.groups
+  wallPick: false,  // wall: choosing which machines to show
 };
+
+/* ---------- layout settings (shared by every browser through the panel) ---------- */
+const UI_DEFAULT = { view: "grid", showPresence: false, groups: [], collapsed: {}, offOpen: false, wall: { mode: "screen", size: "m", filter: "", selected: [] } };
+const mergeUI = j => ({ ...UI_DEFAULT, ...j, collapsed: { ...(j?.collapsed || {}) }, wall: { ...UI_DEFAULT.wall, ...(j?.wall || {}) }, groups: Array.isArray(j?.groups) ? j.groups : [] });
+S.ui = mergeUI(JSON.parse(localStorage.getItem("astrea.ui") || "{}"));
+async function loadUI() {
+  try {
+    const j = await api("GET", "/api/ui");
+    if (j && Object.keys(j).length) { S.ui = mergeUI(j); localStorage.setItem("astrea.ui", JSON.stringify(S.ui)); draw(); }
+  } catch { /* older panel: the browser's copy is enough */ }
+}
+let uiTimer = 0;
+function saveUI() {
+  localStorage.setItem("astrea.ui", JSON.stringify(S.ui));
+  clearTimeout(uiTimer);
+  uiTimer = setTimeout(() => api("PUT", "/api/ui", JSON.stringify(S.ui)).catch(e => toast("No se pudo guardar la vista: " + e.message, "bad")), 400);
+}
 
 /* ---------- tiny DOM helpers ---------- */
 const $ = (tag, attrs = {}, ...kids) => {
@@ -688,9 +814,10 @@ function route() {
   }
   if (h === "/ayuda") return { name: "help" };
   if (h === "/avisos") return { name: "events" };
+  if (h === "/visual") return { name: "visual" };
   return { name: "overview" };
 }
-const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["work", "Tareas", "tareas"], ["mem", "Memoria", "memoria"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
+const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["work", "Tareas", "tareas"], ["hist", "Historial", "historial"], ["mem", "Memoria", "memoria"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
 const taskHref = (machine, id) => "#/tareas/" + encodeURIComponent(machine) + "/" + encodeURIComponent(id);
 const TAB_IDS = Object.fromEntries(TABS.map(t => [t[2], t[0]]));
 const machineHref = (key, tab) => "#/m/" + encodeURIComponent(key) + (tab && tab !== "perf" ? "/" + TABS.find(t => t[0] === tab)[2] : "");
@@ -820,6 +947,13 @@ function serviceAction(key, name, action) {
   return act(`svc:${key}:${name}`, async () => {
     await api("POST", "/api/service?" + q({ machine: key, name, action }));
     toast(`${name} ${verb}`);
+  });
+}
+function cleanDisk(key) {
+  return act("clean:" + key, async () => {
+    const j = await api("POST", "/api/cleanup?" + q({ machine: key }));
+    const r = j.result || {};
+    toast(`${key}: ${bytes(r.freed_bytes)} liberados (${plural(r.files || 0, "archivo", "archivos")}${r.skipped ? ", " + r.skipped + " en uso" : ""})`);
   });
 }
 function removeMachine(key) {
@@ -1104,6 +1238,9 @@ function viewTask(machine, id) {
   return [crumbs, head, cancelHint, c.data.stale ? staleNote(t) : null,
     t.detail ? $("p", { class: "task-desc" }, t.detail) : null,
     outcome,
+    c.data.shot ? $("div", { class: "card shotcard", style: "margin-bottom:18px" }, $("h3", {}, icon("desktop"), "Pantalla cuando falló"),
+      $("a", { href: "/api/work/shot?" + q({ machine, id }), target: "_blank", rel: "noopener", title: "Abrir a tamaño real" },
+        $("img", { src: "/api/work/shot?" + q({ machine, id }), alt: "Lo que había en pantalla cuando la tarea falló", loading: "lazy" }))) : null,
     $("div", { class: "kpis" },
       kpiTile("Progreso", t.progress || "—", null, f != null ? Math.round(f) + "% completado" : t.status === "running" ? "La IA no ha dado un número" : "", "tasks"),
       kpiTile(liveRunning(t) ? "Lleva" : t.status === "running" ? "Llevaba" : "Duró", taskDur(t), null, "desde " + when(t.started), "activity"),
@@ -1124,13 +1261,17 @@ function viewTask(machine, id) {
 const LEVEL = { good: "good", info: "primary", warn: "warn", bad: "bad" };
 const evTone = e => LEVEL[e.level] || "neutral";
 const evAgo = e => Date.now() - e.time < 864e5 ? ago((Date.now() - e.time) / 1000) : when(e.time);
-const unseen = e => e.seq > S.evSeen;
+// Someone sat down / the PC was left free: one every few minutes in a busy aula.
+// Hidden unless asked for, and they never light the unread badge.
+const PRESENCE_KINDS = new Set(["busy", "free"]);
+const shownEvent = e => S.ui.showPresence || !PRESENCE_KINDS.has(e.kind);
+const unseen = e => e.seq > S.evSeen && !PRESENCE_KINDS.has(e.kind);
 function markSeen() {
   if (S.ev.last <= S.evSeen) return;
   S.evSeen = S.ev.last;
   localStorage.setItem("astrea.evSeen", String(S.evSeen));
 }
-const lastEvent = key => S.ev.list.findLast(e => e.machine === key);
+const lastEvent = key => S.ev.list.findLast(e => e.machine === key && !PRESENCE_KINDS.has(e.kind));
 async function pollEvents() {
   for (;;) {
     try {
@@ -1154,7 +1295,8 @@ async function pollEvents() {
 function viewEvents(list) {
   const all = S.ev.list;
   const machines = [...new Set([...list.map(keyOf), ...all.map(e => e.machine).filter(Boolean)])];
-  const shown = all.filter(e => !S.evMachine || e.machine === S.evMachine).reverse();
+  const shown = all.filter(e => (!S.evMachine || e.machine === S.evMachine) && shownEvent(e)).reverse();
+  const nPresence = all.filter(e => PRESENCE_KINDS.has(e.kind) && (!S.evMachine || e.machine === S.evMachine)).length;
   const head = $("div", { class: "page-head" },
     $("div", {}, $("h1", {}, "Avisos"),
       $("div", { class: "sub" }, "Lo que pasa en la flota mientras no miras: equipos que se apagan, trabajos que terminan, alguien que se sienta delante.")));
@@ -1166,6 +1308,9 @@ function viewEvents(list) {
     $("div", { class: "toolbar" },
       $("span", { class: "muted" }, all.length ? plural(shown.length, "aviso", "avisos") : ""),
       $("span", { class: "spacer" }),
+      $("label", { class: "toggle", title: "Avisos de «alguien se sentó» y «quedó libre»" },
+        $("input", { type: "checkbox", checked: S.ui.showPresence || null, onchange: e => { S.ui.showPresence = e.target.checked; saveUI(); draw(); } }),
+        "Quién se sienta y se levanta" + (nPresence && !S.ui.showPresence ? ` (${nPresence})` : "")),
       machines.length > 1 ? $("select", { class: "input sel", "aria-label": "Equipo", onchange: e => { S.evMachine = e.target.value; draw(); } },
         $("option", { value: "" }, "Todos los equipos"),
         machines.map(m => $("option", { value: m, selected: S.evMachine === m || null }, m))) : null),
@@ -1176,7 +1321,7 @@ function viewEvents(list) {
             e.machine ? $("div", { class: "meta" }, $("a", { href: machineHref(e.machine) }, e.machine)) : null))))
       : $("div", { class: "card empty" }, $("h2", {}, all.length ? "Nada de este equipo" : "Sin avisos todavía"),
           $("p", {}, all.length ? "Este equipo no ha avisado de nada desde que arrancó el panel."
-            : "Aquí aparecerá cuando un equipo se encienda o se apague, termine un trabajo o una descarga, se caiga un servicio o alguien se siente delante.")),
+            : "Aquí aparecerá cuando un equipo se encienda o se apague, termine un trabajo o una descarga, o se caiga un servicio.")),
     $("div", { class: "list-foot" }, "Se actualiza solo. El panel guarda los últimos 300 y los olvida al reiniciarse; los mismos avisos llegan a Telegram y a Hermes."),
   ];
 }
@@ -1246,6 +1391,192 @@ function drawSidebar() {
       v.update_available ? $("a", { href: "#/", style: "margin-left:auto" }, v.latest + " disponible") : null) : null].filter(Boolean));
 }
 
+/* ---------- screens: small cached screenshots that survive redraws ---------- */
+// The view is rebuilt every 2 s; the <img> nodes live here and are moved into
+// the new tree, so a picture only reloads when it is older than `every`.
+const thumbs = new Map(); // name@width -> {img, t, ok, failed, loading}
+function thumbOf(name, w, every) {
+  const k = name + "@" + w;
+  let t = thumbs.get(k);
+  if (!t) thumbs.set(k, t = { img: $("img", { alt: "Pantalla de " + name, draggable: "false", decoding: "async" }), t: 0 });
+  if (!t.loading && Date.now() - t.t > every) {
+    t.loading = true;
+    const pre = new Image();
+    pre.onload = () => { t.img.src = pre.src; t.ok = true; t.failed = false; t.loading = false; t.t = Date.now(); t.box?.replaceChildren(...thumbKids(t)); };
+    pre.onerror = () => { t.failed = true; t.loading = false; t.t = Date.now(); t.box?.replaceChildren(...thumbKids(t)); };
+    pre.src = "/api/thumb?" + q({ machine: name, w, max_age: Math.max(2, Math.round(every / 1000) - 1), _: Date.now() });
+  }
+  return t;
+}
+const thumbKids = t => t.ok ? [t.img, ...(t.over || [])]
+  : [$("div", { class: "ph" }, icon("desktop"), t.failed ? "No se pudo ver la pantalla" : "Cargando pantalla…"), ...(t.over || [])];
+// screenBox: the picture of an online machine (or a placeholder), with chips over it.
+function screenBox(m, w, every, over = []) {
+  const ov = over.some(Boolean) ? [$("div", { class: "over" }, over)] : [];
+  if (!m.online) return $("div", { class: "thumb" }, $("div", { class: "ph" }, icon("power"), "Sin conexión"), ...ov);
+  const t = thumbOf(m.name, w, every);
+  t.over = ov;
+  const box = $("div", { class: "thumb" }, ...thumbKids(t));
+  t.box = box;
+  return box;
+}
+
+/* ---------- uptime and AI activity (sys.uptime, kept by each agent) ---------- */
+const UPTIME_URL = "/api/uptime?" + q({ days: 30 });
+const fleetUptime = () => load(UPTIME_URL, 60000);
+const uptimeOf = name => (S.cache[UPTIME_URL]?.data || []).find(x => x.machine === name)?.report;
+const dayStart = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d; };
+// Splits every on-span over local hours: cb(hourStart ms, ms on in that hour, the span).
+function eachHourOn(rep, from, cb) {
+  for (const sp of rep?.spans || []) {
+    let a = Math.max(Date.parse(sp.start), from);
+    const b = sp.end_kind === "running" ? Date.now() : Date.parse(sp.end);
+    while (a < b) {
+      const h = new Date(a); h.setMinutes(0, 0, 0);
+      const next = Math.min(b, h.getTime() + 36e5);
+      cb(h.getTime(), next - a, sp);
+      a = next;
+    }
+  }
+}
+// days(): the last n local days, oldest first: {d, actions, on (ms)}.
+function days(rep, n) {
+  const start = dayStart(Date.now()); start.setDate(start.getDate() - n + 1);
+  const out = Array.from({ length: n }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return { d, actions: 0, on: 0 }; });
+  const idx = t => Math.round((dayStart(t) - start) / 864e5);
+  for (const h of rep?.activity || []) { const i = idx(Date.parse(h.hour)); if (out[i]) out[i].actions += h.actions; }
+  eachHourOn(rep, start.getTime(), (h, ms) => { const i = idx(h); if (out[i]) out[i].on += ms; });
+  return out;
+}
+// Fixed steps, so two PCs can be compared at a glance.
+const level = n => n >= 100 ? "l4" : n >= 30 ? "l3" : n >= 10 ? "l2" : n > 0 ? "l1" : "";
+const dayName = d => d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+const hm = ms => { const m = Math.round(ms / 6e4); return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? " " + (m % 60) + " min" : ""}` : m + " min"; };
+// squares(): one square per day, like GitHub's or Claude Code's activity chart.
+function squares(name, n, withLabel = true) {
+  const rep = uptimeOf(name);
+  if (!rep) return null;
+  const ds = days(rep, n);
+  const total = ds.reduce((a, d) => a + d.actions, 0);
+  return $("div", { class: "sq-wrap" },
+    withLabel ? $("div", { class: "lbl" }, $("span", {}, "Actividad de la IA · " + n + " días"), $("span", { class: "tnum" }, plural(total, "acción", "acciones"))) : null,
+    $("div", { class: "sq", role: "img", "aria-label": `Actividad de la IA en los últimos ${n} días: ${total} acciones` },
+      ds.map(d => $("i", { class: level(d.actions) || (d.on > 0 ? "on" : ""),
+        title: `${dayName(d.d)} · ${d.actions ? plural(d.actions, "acción", "acciones") + " de la IA" : "sin actividad de la IA"} · ${d.on ? "encendida " + hm(d.on) : "apagada"}` }))));
+}
+
+/* ---------- connection quality (tailscale ping from the panel) ---------- */
+function netChip(m) {
+  const n = m.net;
+  if (!n || !m.online) return null;
+  if (n.error) return $("span", { class: "chip t-neutral", title: "Tailscale no obtuvo respuesta al último ping" }, icon("activity"), "Sin ping");
+  return n.direct
+    ? $("span", { class: "chip t-good", title: "Conexión directa (" + n.via + ")" }, icon("activity"), n.ms + " ms")
+    : $("span", { class: "chip t-warn", title: "Por un relé de Tailscale (" + n.via + "): más lento; el vídeo en vivo irá peor" }, icon("activity"), "Relé · " + n.ms + " ms");
+}
+
+/* ---------- groups ---------- */
+const globRe = p => new RegExp("^" + p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i");
+const byPattern = (g, name) => (g.pattern || "").split(/[,\s]+/).filter(Boolean).some(p => globRe(p).test(name));
+const inGroup = (g, name) => !!g && ((g.machines || []).includes(name) || byPattern(g, name));
+// grouped(): each machine in the first group it belongs to; the rest at the end.
+function grouped(entries) {
+  const used = new Set(), out = [];
+  for (const g of S.ui.groups) {
+    const items = entries.filter(e => !used.has(e.m.name) && inGroup(g, e.m.name));
+    items.forEach(e => used.add(e.m.name));
+    out.push({ name: g.name, items });
+  }
+  const rest = entries.filter(e => !used.has(e.m.name));
+  if (rest.length) out.push({ name: "Sin grupo", items: rest });
+  return out;
+}
+// fold(): a collapsible section that remembers whether it was closed.
+function fold(id, summary, body, { off = false, open } = {}) {
+  const isOpen = open ?? !S.ui.collapsed[id];
+  return $("details", { class: "group" + (off ? " off" : ""), open: isOpen || null,
+    ontoggle: e => {
+      const now = e.target.open;
+      if (off) { if (S.ui.offOpen !== now) { S.ui.offOpen = now; saveUI(); } }
+      else if (!!S.ui.collapsed[id] === now) { if (now) delete S.ui.collapsed[id]; else S.ui.collapsed[id] = true; saveUI(); }
+    } },
+    $("summary", {}, icon("chev", "tw"), ...summary), body);
+}
+function groupEditor(list) {
+  const d = S.groupDraft, names = list.map(m => m.name).filter(Boolean);
+  const save = () => {
+    const clean = d.map(g => ({ name: g.name.trim(), pattern: (g.pattern || "").trim(), machines: (g.machines || []).filter(n => names.includes(n)) }));
+    if (clean.some(g => !g.name)) return toast("Ponle nombre a cada grupo.", "bad");
+    if (new Set(clean.map(g => g.name.toLowerCase())).size !== clean.length) return toast("Hay dos grupos con el mismo nombre.", "bad");
+    S.ui.groups = clean; S.groupDraft = null; saveUI(); draw();
+    toast(clean.length ? "Grupos guardados" : "Grupos borrados");
+  };
+  return $("div", { class: "card geditor" },
+    $("div", { class: "ghead" }, $("h3", {}, icon("folder"), "Grupos"), $("span", { class: "spacer" }),
+      $("button", { class: "btn sm", onclick: () => { d.push({ name: "", pattern: "", machines: [] }); draw(); } }, icon("plus"), "Nuevo grupo"),
+      $("button", { class: "btn sm ghost", onclick: () => { S.groupDraft = null; draw(); } }, "Cancelar"),
+      $("button", { class: "btn sm primary", onclick: save }, "Guardar")),
+    d.length ? d.map((g, i) => $("div", { class: "grow" },
+      $("input", { class: "input", value: g.name, placeholder: "Nombre (p. ej. Aula F3)", "aria-label": "Nombre del grupo", oninput: e => { g.name = e.target.value; } }),
+      $("input", { class: "input", value: g.pattern || "", placeholder: "Patrón: f3-*", "aria-label": "Patrón de nombres", title: "* = cualquier cosa; varios separados por comas",
+        oninput: e => { g.pattern = e.target.value; }, onchange: draw }),
+      $("div", { class: "members" }, names.map(n => {
+        const pat = byPattern(g, n), on = pat || (g.machines || []).includes(n);
+        return $("label", { class: "mchip" + (on ? " on" : "") + (pat ? " locked" : ""), title: pat ? "Entra por el patrón" : null },
+          $("input", { type: "checkbox", checked: on || null, disabled: pat || null,
+            onchange: e => { g.machines = e.target.checked ? [...(g.machines || []), n] : (g.machines || []).filter(x => x !== n); draw(); } }), n);
+      })),
+      $("button", { class: "btn sm ghost icon-only", "aria-label": "Borrar el grupo " + (g.name || ""), title: "Borrar grupo", onclick: () => { d.splice(i, 1); draw(); } }, icon("trash"))))
+      : $("div", { class: "empty-sm" }, "Aún no hay grupos. Crea uno para juntar, por ejemplo, todas las f3 (patrón f3-*)."),
+    $("div", { class: "list-foot" }, "Un equipo entra en un grupo si lo marcas o si su nombre encaja con el patrón. Si encaja en varios, sale en el primero. Se guarda en el panel: lo verás igual desde el móvil."));
+}
+
+/* ---------- machine card, row and offline list ---------- */
+function machineCard(m, idx) {
+  const key = keyOf(m, idx), s = m.online ? m.stats : null, p = presence(m, key);
+  const title = titleOf(m, idx, s || lastGood.get(key));
+  const g = gpuPeak(s);
+  const mini = (k, v) => $("div", {}, $("div", { class: "k" }, k, $("b", {}, pct(v))), meter(v, { thin: true, label: k, hot: v >= 92 }));
+  const nSvc = services(m).filter(x => x.state === "running").length;
+  return $("a", { class: "card mcard" + (m.online ? "" : " off"), href: machineHref(key), "aria-label": `${title}: ${p.label}` },
+    screenBox(m, 480, 30000, [$("span", { class: "chip t-" + p.tone }, $("span", { class: "dot" }), p.label), $("span", { class: "spacer" }), netChip(m)]),
+    $("div", { class: "mbody" },
+      $("div", { class: "top" },
+        $("div", { class: "who" }, $("b", {}, title), $("small", {}, osName(s || lastGood.get(key)) || "—")),
+        icon("chev", "chev")),
+      s ? $("div", { class: "mini" }, mini("CPU", s.cpu?.usage_percent), mini("RAM", s.memory?.used_percent),
+            g.u != null || g.v != null ? mini(g.u != null ? "GPU" : "VRAM", g.u ?? g.v) : $("div", {}))
+        : $("div", { class: "off-msg" }, "Esperando datos…"),
+      workStrip(m.admin?.work),
+      noticeLine(key),
+      squares(m.name, 28),
+      $("div", { class: "bottom" },
+        modeChip(m.admin),
+        p.detail ? $("span", { class: "muted" }, p.detail) : null,
+        $("span", { class: "spacer" }),
+        nSvc ? $("span", { class: "muted" }, nSvc + (nSvc === 1 ? " servicio" : " servicios")) : null,
+        needsUpdate(m) ? chip("primary", "Actualización", false) : null)));
+}
+function machineRow(m, idx) {
+  const key = keyOf(m, idx), s = m.online ? m.stats : null, p = presence(m, key), g = gpuPeak(s);
+  const title = titleOf(m, idx, s || lastGood.get(key));
+  return $("a", { class: "li mrow" + (m.online ? "" : " off"), href: machineHref(key) },
+    $("span", { class: "dot t-" + p.tone, "aria-hidden": "true" }),
+    $("div", { class: "nm" }, $("b", {}, title), $("small", {}, p.label + (p.detail ? " · " + p.detail : ""))),
+    s ? $("div", { class: "nums" }, $("span", {}, "CPU " + pct(s.cpu?.usage_percent)), $("span", {}, "RAM " + pct(s.memory?.used_percent)),
+          g.u != null ? $("span", {}, "GPU " + pct(g.u)) : null)
+      : $("div", { class: "nums" }, osName(lastGood.get(key)) || ""),
+    $("div", { class: "wk", title: m.admin?.work?.title || null }, m.online && m.admin?.work ? "📋 " + m.admin.work.title : ""),
+    netChip(m) || $("span"),
+    squares(m.name, 14, false) || $("span"),
+    icon("chev", "chev"));
+}
+function offlineSection(entries) {
+  if (!entries.length) return null;
+  return fold("@off", [$("span", {}, "Sin conexión"), $("span", { class: "count" }, String(entries.length))],
+    $("div", { class: "list mlist" }, entries.map(e => machineRow(e.m, e.idx))), { off: true, open: S.ui.offOpen });
+}
+
 /* ---------- views ---------- */
 function updateBanner(list) {
   const v = S.version;
@@ -1270,33 +1601,8 @@ function kpiTile(label, value, of, hint, ic) {
     hint ? $("div", { class: "hint" }, hint) : null);
 }
 
-function machineCard(m, idx) {
-  const key = keyOf(m, idx), s = m.online ? m.stats : null, p = presence(m, key);
-  const title = titleOf(m, idx, s || lastGood.get(key));
-  const g = gpuPeak(s);
-  const row = (k, v) => [$("span", { class: "k" }, k), meter(v, { thin: true, label: k }), $("span", { class: "v" }, pct(v))];
-  const nSvc = services(m).filter(x => x.state === "running").length;
-  return $("a", { class: "card mcard" + (m.online ? "" : " off"), href: machineHref(key), "aria-label": `${title}: ${p.label}` },
-    $("div", { class: "top" },
-      $("div", { class: "os-tile" }, icon("desktop")),
-      $("div", { class: "who" }, $("b", {}, title), $("small", {}, osName(s || lastGood.get(key)) || (m.online ? "—" : "Sistema desconocido"))),
-      icon("chev", "chev")),
-    s ? $("div", { class: "bars" },
-          row("CPU", s.cpu?.usage_percent), row("RAM", s.memory?.used_percent),
-          (g.u != null || g.v != null) ? row(g.u != null ? "GPU" : "VRAM", g.u != null ? g.u : g.v) : null)
-      : $("div", { class: "off-msg" }, m.online ? "Esperando datos…" : p.detail),
-    m.online ? workStrip(m.admin?.work) : null,
-    noticeLine(key),
-    $("div", { class: "bottom" },
-      chip(p.tone, p.label),
-      m.online ? modeChip(m.admin) : null,
-      m.online && p.detail ? $("span", { class: "muted" }, p.detail) : null,
-      $("span", { class: "spacer" }),
-      nSvc ? $("span", { class: "muted" }, nSvc + (nSvc === 1 ? " servicio" : " servicios")) : null,
-      needsUpdate(m) ? chip("primary", "Actualización", false) : null));
-}
-
 function viewOverview(list) {
+  fleetUptime();
   const online = list.filter(m => m.online);
   const keys = list.map(keyOf);
   const free = list.filter((m, i) => m.online && presence(m, keys[i]).label === "Libre").length;
@@ -1313,6 +1619,29 @@ function viewOverview(list) {
     $("p", {}, "Astrea deja que tu IA use otros ordenadores: ver la pantalla, ejecutar programas y levantar modelos. Empieza instalando el agente en el equipo que quieras controlar."),
     $("a", { class: "btn primary", href: "#/ayuda" }, icon("plus"), "Cómo añadir un equipo"))];
 
+  const entries = list.map((m, idx) => ({ m, idx }));
+  const on = entries.filter(e => e.m.online), off = entries.filter(e => !e.m.online);
+  const asList = S.ui.view === "list";
+  const render = items => asList ? $("div", { class: "list mlist" }, items.map(e => machineRow(e.m, e.idx)))
+                                 : $("div", { class: "grid" }, items.map(e => machineCard(e.m, e.idx)));
+  const setView = v => { S.ui.view = v; saveUI(); draw(); };
+  const bar = $("div", { class: "ov-bar" },
+    $("h2", { class: "section" }, "Equipos", $("span", { class: "count" }, String(list.length))),
+    $("span", { class: "spacer" }),
+    $("div", { class: "segmented sm", role: "tablist", "aria-label": "Vista" },
+      $("button", { role: "tab", "aria-selected": String(!asList), onclick: () => setView("grid") }, icon("grid"), "Cuadrícula"),
+      $("button", { role: "tab", "aria-selected": String(asList), onclick: () => setView("list") }, icon("list"), "Lista")),
+    $("button", { class: "btn sm", onclick: () => { S.groupDraft = S.groupDraft ? null : structuredClone(S.ui.groups); draw(); } }, icon("folder"), "Grupos"));
+
+  let sections;
+  if (!S.ui.groups.length) sections = on.length ? render(on) : $("div", { class: "card empty-group" }, "Ningún equipo en línea ahora mismo.");
+  else sections = grouped(entries).map(g => {
+    const live = g.items.filter(e => e.m.online);
+    if (!g.items.length) return null;
+    return fold(g.name, [$("span", {}, g.name), $("span", { class: "count" }, `${live.length} de ${g.items.length} en línea`)],
+      live.length ? render(live) : $("div", { class: "empty-group" }, "Todos sus equipos están sin conexión (abajo)."));
+  });
+
   return [head,
     updateBanner(list),
     $("div", { class: "kpis" },
@@ -1320,8 +1649,62 @@ function viewOverview(list) {
       kpiTile("Libres ahora", free, null, "Listos para que tu IA los use", "desktop"),
       kpiTile("En uso", busy, null, busy ? "Alguien está delante" : "Nadie está delante", "user"),
       kpiTile("Servicios activos", svc, null, svc ? "Modelos y APIs funcionando" : "Ninguno en marcha", "box")),
-    $("h2", { class: "section" }, "Equipos", $("span", { class: "count" }, String(list.length))),
-    $("div", { class: "grid" }, list.map(machineCard))];
+    bar,
+    S.groupDraft ? groupEditor(list) : null,
+    sections,
+    offlineSection(off)];
+}
+
+/* wall of screens (Visualización): every screen at a glance, click one to watch it live */
+const TILE = { s: "260px", m: "360px", l: "520px" };
+function viewVisual(list) {
+  const w = S.ui.wall;
+  const entries = list.map((m, idx) => ({ m, idx }));
+  const group = S.ui.groups.find(g => g.name === w.filter);
+  const pool = entries.filter(e => w.filter === "@sel" ? w.selected.includes(e.m.name) : group ? inGroup(group, e.m.name) : true);
+  const on = pool.filter(e => e.m.online), off = pool.filter(e => !e.m.online);
+  const set = (k, v) => { w[k] = v; saveUI(); draw(); };
+  const pick = name => { w.selected = w.selected.includes(name) ? w.selected.filter(n => n !== name) : [...w.selected, name]; saveUI(); draw(); };
+  const every = { s: 6000, m: 5000, l: 4000 }[w.size] || 5000, width = { s: 480, m: 640, l: 960 }[w.size] || 640;
+
+  const tile = e => {
+    const m = e.m, key = keyOf(m, e.idx), p = presence(m, key), title = titleOf(m, e.idx, m.stats);
+    const picked = w.selected.includes(m.name);
+    const open = () => S.wallPick ? pick(m.name) : showShot(m.name, title);
+    return $("div", { class: "tile" + (S.wallPick ? " pick" : "") + (picked ? " picked" : ""), role: "button", tabindex: "0",
+                      "aria-label": S.wallPick ? `${picked ? "Quitar" : "Añadir"} ${title}` : `Ver ${title} en vivo`,
+                      onclick: open, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } },
+      screenBox(m, width, every, [netChip(m)]),
+      S.wallPick ? $("span", { class: "tick", "aria-hidden": "true" }, picked ? icon("check") : null) : null,
+      $("div", { class: "cap" }, $("span", { class: "dot t-" + p.tone, title: p.label }), $("b", {}, title),
+        $("small", { title: m.admin?.work?.title || p.detail || null }, m.admin?.work ? "📋 " + m.admin.work.title : p.detail || p.label)));
+  };
+
+  return [
+    $("div", { class: "page-head" },
+      $("div", {}, $("h1", {}, "Visualización"),
+        $("div", { class: "sub" }, "Las pantallas de tus equipos de un vistazo. Haz clic en una para verla en vivo y tomar el control.")),
+      $("div", { class: "actions" },
+        $("button", { class: "btn" + (S.wallPick ? " primary" : ""), onclick: () => { S.wallPick = !S.wallPick; if (S.wallPick && w.filter !== "@sel") w.filter = ""; draw(); } },
+          icon(S.wallPick ? "check" : "plus"), S.wallPick ? "Listo" : "Elegir equipos"))),
+    $("div", { class: "toolbar" },
+      $("div", { class: "segmented sm", role: "tablist", "aria-label": "Qué mostrar" },
+        $("button", { role: "tab", "aria-selected": String(w.mode !== "camera"), onclick: () => set("mode", "screen") }, icon("desktop"), "Pantalla"),
+        $("button", { role: "tab", "aria-selected": String(w.mode === "camera"), disabled: true, title: "La cámara llega en la próxima versión del agente" }, icon("cam"), "Cámara")),
+      $("select", { class: "input sel", "aria-label": "Equipos que se muestran", onchange: e => set("filter", e.target.value) },
+        $("option", { value: "" }, "Todos los equipos"),
+        S.ui.groups.map(g => $("option", { value: g.name, selected: w.filter === g.name || null }, "Grupo: " + g.name)),
+        $("option", { value: "@sel", selected: w.filter === "@sel" || null }, `Mi selección (${w.selected.length})`)),
+      $("span", { class: "spacer" }),
+      $("span", { class: "muted" }, on.length ? `Se refresca cada ${every / 1000} s` : ""),
+      $("div", { class: "segmented sm", role: "tablist", "aria-label": "Tamaño" },
+        [["s", "S"], ["m", "M"], ["l", "L"]].map(([k, l]) => $("button", { role: "tab", "aria-selected": String(w.size === k), onclick: () => set("size", k), title: "Tamaño " + l }, l)))),
+    S.wallPick ? $("div", { class: "callout sm t-primary", style: "margin:0 0 14px" }, icon("info"),
+      $("div", {}, $("p", {}, "Toca las pantallas que quieras ver juntas y pulsa Listo. Luego elige «Mi selección» arriba."))) : null,
+    on.length ? $("div", { class: "wall", style: "--tile:" + (TILE[w.size] || TILE.m) }, on.map(tile))
+      : $("div", { class: "card empty" }, $("h2", {}, pool.length ? "Ninguno en línea" : "Nada que mostrar"),
+          $("p", {}, pool.length ? "Los equipos de esta vista están apagados o sin conexión." : w.filter === "@sel" ? "Aún no has elegido equipos: pulsa «Elegir equipos»." : "Este grupo no tiene equipos.")),
+    offlineSection(off)];
 }
 
 /* machine detail */
@@ -1397,7 +1780,8 @@ function tabServices(m) {
       $("div", { class: "os-tile", style: "width:34px;height:34px;border-radius:9px" }, icon("box")),
       $("div", {}, $("div", { class: "nm" }, sv.name),
         $("div", { class: "meta" }, ep ? $("a", { href: base + "/dyn/" + ep, target: "_blank", rel: "noopener" }, "/dyn/" + ep) : "Sin dirección pública",
-          sv.restarts ? ` · ${sv.restarts} ${sv.restarts === 1 ? "reinicio" : "reinicios"}` : "")),
+          sv.restarts ? ` · ${sv.restarts} ${sv.restarts === 1 ? "reinicio" : "reinicios"}` : "",
+          sv.gpu_mem || sv.gpu_percent != null ? ` · GPU ${[sv.gpu_mem ? bytes(sv.gpu_mem) : null, sv.gpu_percent != null ? pct(sv.gpu_percent) : null].filter(Boolean).join(" · ")}` : "")),
       $("span", { class: "spacer" }), chip(tone, label),
       m.online ? $("span", { class: "acts" },
         $("button", { class: "btn sm ghost", onclick: () => showLogs(m.name, sv.name), title: "Ver registro" }, icon("doc"), "Registro"),
@@ -1540,6 +1924,75 @@ function tabMemory(m, key) {
   ];
 }
 
+/* machine history: when it was on and what the AI did, hour by hour */
+const END = { running: ["good", "Encendida"], off: ["neutral", "Apagado normal"], sleep: ["neutral", "Suspendida"], crash: ["bad", "Apagón o reinicio forzado"] };
+function tabHistory(m, key) {
+  const url = "/api/uptime?" + q({ machine: m.name, days: 30 });
+  const c = load(url, m.online ? 30000 : 120000);
+  if (!c.t) return $("div", { class: "card empty" }, "Cargando el historial…");
+  const rep = c.data?.report;
+  if (!rep) return $("div", { class: "callout t-" + (/actualízalo/.test(c.err || "") ? "warn" : "bad") }, icon("alert"),
+    $("div", {}, $("b", {}, /actualízalo/.test(c.err || "") ? "El agente de este equipo aún no guarda su historial" : "No se pudo leer el historial"),
+      $("p", {}, /actualízalo/.test(c.err || "") ? "Actualízalo: desde ese momento recuerda cuándo estuvo encendido, y además rellena lo anterior con el registro de Windows." : c.err || "")));
+
+  const N = 14, from = dayStart(Date.now()); from.setDate(from.getDate() - N + 1);
+  const cells = {}; // hour ms -> {on, n, crash}
+  const cell = h => cells[h] || (cells[h] = { on: 0, n: 0 });
+  eachHourOn(rep, from.getTime(), (h, ms) => { cell(h).on += ms; });
+  for (const sp of rep.spans || []) if (sp.end_kind === "crash") { const h = new Date(sp.end); h.setMinutes(0, 0, 0); cell(h.getTime()).crash = true; }
+  for (const a of rep.activity || []) { const h = new Date(a.hour); h.setMinutes(0, 0, 0); if (h >= from) cell(h.getTime()).n += a.actions; }
+
+  const win = Date.now() - from.getTime();
+  let on = 0, acts = 0;
+  for (const v of Object.values(cells)) { on += v.on; acts += v.n; }
+  const inWin = (rep.spans || []).filter(sp => Date.parse(sp.end) >= from.getTime() || sp.end_kind === "running");
+  const crashes = inWin.filter(sp => sp.end_kind === "crash").length;
+  const cur = (rep.spans || []).at(-1);
+
+  const grid = [$("span"), ...Array.from({ length: 24 }, (_, h) => $("span", { class: "hr" }, h % 6 === 0 ? String(h) : ""))];
+  for (let d = N - 1; d >= 0; d--) {
+    const day = new Date(from); day.setDate(day.getDate() + d);
+    grid.push($("span", { class: "day" }, day.toLocaleDateString([], { weekday: "short", day: "numeric" })));
+    for (let h = 0; h < 24; h++) {
+      const t = new Date(day); t.setHours(h);
+      const v = cells[t.getTime()] || { on: 0, n: 0 };
+      const future = t.getTime() > Date.now();
+      grid.push($("i", { class: [future ? "" : level(v.n) || (v.on > 0 ? "on" : ""), v.crash ? "crash" : ""].join(" ").trim() || null,
+        title: future ? null : `${dayName(t)}, ${h}:00–${h + 1}:00 · ${v.on ? "encendida " + hm(v.on) : "apagada"}${v.n ? " · " + plural(v.n, "acción", "acciones") + " de la IA" : ""}${v.crash ? " · se cortó de golpe" : ""}` }));
+    }
+  }
+
+  const span = sp => {
+    const [tone, label] = END[sp.end_kind] || ["neutral", sp.end_kind];
+    const a = Date.parse(sp.start), b = sp.end_kind === "running" ? Date.now() : Date.parse(sp.end);
+    return $("div", { class: "li" },
+      $("div", { class: "k" }, when(sp.start) + " → " + (sp.end_kind === "running" ? "ahora" : when(sp.end)),
+        $("small", {}, dur(b - a) + (sp.source === "os" ? " · del registro del sistema, antes de instalar Astrea" : ""))),
+      $("div", { class: "v" }, chip(tone, label)));
+  };
+
+  return [
+    c.data.stale ? $("div", { class: "callout sm t-warn", style: "margin:0 0 18px" }, icon("info"), $("div", {}, $("p", {}, "El equipo no responde: así estaba " + when(c.data.cached_at) + "."))) : null,
+    $("div", { class: "kpis" },
+      kpiTile("Encendida", pct(on / win * 100), null, "de los últimos " + N + " días (" + hm(on) + ")", "power"),
+      kpiTile(cur?.end_kind === "running" && m.online ? "Lleva encendida" : "Última vez", cur ? (cur.end_kind === "running" && m.online ? dur(Date.now() - Date.parse(cur.start)) : when(cur.end)) : "—", null,
+        cur ? "desde " + when(cur.start) : "", "clock"),
+      kpiTile("Apagones", crashes, null, crashes ? "Cortes de luz o reinicios forzados" : "Ninguno en estos días", "alert"),
+      kpiTile("Acciones de la IA", acts, null, "Bajo una tarea declarada", "bolt")),
+    $("div", { class: "list-title" }, "Hora a hora · últimos " + N + " días"),
+    $("div", { class: "card" }, $("div", { class: "hgrid", role: "img", "aria-label": "Encendido y actividad de la IA por hora" }, grid),
+      $("div", { class: "legend" },
+        $("span", {}, $("i"), "Apagada"), $("span", {}, $("i", { style: "background:color-mix(in srgb, var(--good) 30%, var(--track))" }), "Encendida"),
+        $("span", {}, $("i", { style: "background:color-mix(in srgb, var(--primary) 35%, var(--track))" }), $("i", { style: "background:color-mix(in srgb, var(--primary) 60%, var(--track))" }),
+          $("i", { style: "background:color-mix(in srgb, var(--primary) 82%, var(--track))" }), $("i", { style: "background:var(--primary)" }), "La IA trabajando (1, 10, 30, 100+ acciones)"),
+        $("span", {}, $("i", { style: "box-shadow:inset 0 0 0 2px var(--bad)" }), "Apagón"))),
+    $("div", { class: "list-title" }, "Encendidos recientes"),
+    $("div", { class: "list" }, (rep.spans || []).slice(-10).reverse().map(span)),
+    $("div", { class: "list-foot" }, "Lo guarda el propio equipo minuto a minuto: aunque el panel o el hub estén apagados no se pierde nada." +
+      (rep.os_history ? " Lo anterior a instalar Astrea sale del registro del sistema." : "")),
+  ];
+}
+
 function tabSystem(m, s) {
   const a = m.admin || {}, idle = m.idle;
   const li = (k, sub, v) => $("div", { class: "li" }, $("div", { class: "k" }, k, sub ? $("small", {}, sub) : null), $("div", { class: "v" }, v));
@@ -1568,7 +2021,13 @@ function tabSystem(m, s) {
            : a.version || "—"),
       a.auto_update != null ? li("Actualización automática", "Se actualiza sola cuando sale una versión nueva", a.auto_update ? chip("good", "Activada") : chip("neutral", "Desactivada")) : null,
       a.update_error ? li("Último error al actualizar", null, $("span", { style: "color:var(--bad)" }, a.update_error)) : null,
-      li("Dirección", "Dentro de tu red Tailscale", m.base ? $("code", {}, m.base.replace(/^https?:\/\//, "")) : "—")),
+      li("Dirección", "Dentro de tu red Tailscale", m.base ? $("code", {}, m.base.replace(/^https?:\/\//, "")) : "—"),
+      li("Conexión", m.net?.direct === false && !m.net?.error ? "Por un relé de Tailscale: más lenta. Suele arreglarse sola, o abriendo UDP en el router." : "Ping de Tailscale desde este panel", netChip(m) || "—")),
+    $("div", { class: "list-title" }, "Disco"),
+    $("div", { class: "list" },
+      li("Liberar espacio", a.cleanup ? `Última limpieza ${when(a.cleanup.time)}${a.cleanup.auto ? " (automática)" : ""}: ${bytes(a.cleanup.freed_bytes)} liberados`
+           : "Borra temporales de más de 3 días y registros viejos. Se hace sola si el disco pasa del 90 %.",
+         m.online ? confirmable("clean:" + m.name, { label: "Limpiar", confirm: "Sí, borrar temporales", icon: "trash", cls: "sm", run: () => cleanDisk(m.name) }) : "—")),
     $("div", { class: "list", style: "margin-top:24px" },
       li("Quitar del panel", "Deja de mostrarlo aquí y en Hermes. No desinstala nada en ese equipo.",
          confirmable("rm:" + m.name, { label: "Quitar", confirm: "Sí, quitar", icon: "trash", cls: "sm danger", run: () => removeMachine(m.name) }))),
@@ -1622,7 +2081,7 @@ function viewMachine(list, id) {
       wf != null ? $("div", { style: "max-width:320px;margin-top:8px" }, meter(wf, { thin: true, label: "Progreso de la tarea" })) : null),
     $("div", { class: "actions" }, $("a", { class: "btn sm", href: taskHref(key, w.id) }, "Ver tarea"))) : null;
 
-  const body = tab === "mem" ? tabMemory(m, key) : tab === "svc" ? tabServices(m) : tab === "sys" ? tabSystem(m, s) : tab === "act" ? tabActivity(m, key) : tab === "work" ? tabWork(m, key) : tabPerformance(key, s);
+  const body = tab === "mem" ? tabMemory(m, key) : tab === "svc" ? tabServices(m) : tab === "sys" ? tabSystem(m, s) : tab === "act" ? tabActivity(m, key) : tab === "work" ? tabWork(m, key) : tab === "hist" ? tabHistory(m, key) : tabPerformance(key, s);
   return [head, callout, locked, working, seg, $("div", { role: "tabpanel" }, body)];
 }
 
@@ -1693,6 +2152,7 @@ function draw() {
     else if (S.list == null) content = [$("div", { class: "empty" }, S.ok ? "Conectando con los equipos…" : "El panel no responde: " + S.err)];
     else if (r.name === "machine") content = viewMachine(S.list, r.id);
     else if (r.name === "tasks") content = viewTasks(S.list);
+    else if (r.name === "visual") content = viewVisual(S.list);
     else if (r.name === "task") content = viewTask(r.machine, r.id);
     else content = viewOverview(S.list);
   } catch (e) {
@@ -1702,7 +2162,7 @@ function draw() {
   }
   view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
   document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea"
-    : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
+    : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "visual" ? "Visualización — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
 }
 
 /* ---------- live window ---------- */
@@ -1940,6 +2400,7 @@ async function loop() {
   setTimeout(loop, POLL_MS);
 }
 loadVersion().then(draw);
+loadUI();
 setInterval(loadVersion, 5 * 60 * 1000);
 loop();
 pollEvents();

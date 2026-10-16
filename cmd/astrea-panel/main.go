@@ -143,6 +143,7 @@ func main() {
 	mux.HandleFunc("/api/work/shot", p.handleWorkShot)
 	mux.HandleFunc("/api/cleanup", p.handleCleanup)
 	mux.HandleFunc("/api/ui", p.handleUI)
+	mux.HandleFunc("/api/thumb", p.handleThumb)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
