@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Solar2004/Astrea/internal/auth"
@@ -45,9 +47,73 @@ func guiCaps() []capability.Capability {
 	}
 }
 
+// needsDesktop lists the forwarded capabilities that are useless on a locked
+// PC, so the agent signs in first instead of handing back a black screen or a
+// "BitBlt failed". sys.idle is deliberately NOT here: it is the read used to
+// decide whether the PC is locked, and panel.control is the owner's switch.
+func needsDesktop(name string) bool {
+	switch name {
+	case "sys.idle", "panel.control":
+		return false
+	}
+	return true
+}
+
+// unlockGate makes sure the PC is signed in before a desktop action runs, so
+// the AI never has to remember to do it: Hermes just asks for a screenshot or
+// a click and the lock screen gets out of the way by itself.
+type unlockGate struct {
+	capability.Capability
+	bridge *guibridge.Bridge
+	logger *log.Logger
+}
+
+// lastAutoUnlock throttles the SYSTEM helper: a burst of clicks must not
+// schedule one task per click.
+var lastAutoUnlock struct {
+	sync.Mutex
+	at time.Time
+}
+
+func (u unlockGate) Invoke(ctx context.Context, payload json.RawMessage, emit capability.Emit) (any, error) {
+	u.ensureUnlocked(ctx)
+	return u.Capability.Invoke(ctx, payload, emit)
+}
+
+// ensureUnlocked asks the helper whether the lock screen is up and, if it is,
+// runs the unlock helper. Best effort: any failure just lets the action through
+// so the caller gets the real error instead of ours.
+func (u unlockGate) ensureUnlocked(ctx context.Context) {
+	res, err := u.bridge.Call(ctx, "sys.idle", json.RawMessage(`{}`))
+	if err != nil {
+		return // nobody logged in, or no helper: nothing we can unlock
+	}
+	var idle struct {
+		Locked bool `json:"locked"`
+	}
+	if json.Unmarshal(res.Result, &idle) != nil || !idle.Locked {
+		return
+	}
+	lastAutoUnlock.Lock()
+	if time.Since(lastAutoUnlock.at) < 30*time.Second {
+		lastAutoUnlock.Unlock()
+		return
+	}
+	lastAutoUnlock.at = time.Now()
+	lastAutoUnlock.Unlock()
+
+	u.logger.Printf("auto-unlock: the PC is on the lock screen; signing back in before %s", u.Capability.Name())
+	out, err := capability.AutoUnlock()
+	if err != nil {
+		u.logger.Printf("auto-unlock: %v", err)
+		return
+	}
+	u.logger.Printf("auto-unlock: %v", out)
+}
+
 // registerGUIProxies advertises the GUI capabilities on the headless agent
 // and forwards them to the helper.
-func registerGUIProxies(reg *capability.Registry, b *guibridge.Bridge) {
+func registerGUIProxies(reg *capability.Registry, b *guibridge.Bridge, logger *log.Logger) {
 	for _, c := range guiCaps() {
 		r := guibridge.Remote{Bridge: b, Local: c}
 		if c.Name() == "sys.idle" {
@@ -58,15 +124,20 @@ func registerGUIProxies(reg *capability.Registry, b *guibridge.Bridge) {
 					"note": "nobody is logged in on this PC"}, nil
 			}
 		}
+		if needsDesktop(c.Name()) {
+			reg.Register(unlockGate{Capability: r, bridge: b, logger: logger})
+			continue
+		}
 		reg.Register(r)
 	}
 	// exec runs in the headless agent, outside any desktop: GUI programs it
 	// starts are invisible. gui.exec runs the command in the user's session.
-	reg.Register(guibridge.Remote{Bridge: b, Local: capability.Exec{}, As: "gui.exec",
+	guiExec := guibridge.Remote{Bridge: b, Local: capability.Exec{}, As: "gui.exec",
 		Description: "Run a command INSIDE the logged-in user's desktop session, so windows it opens are visible " +
 			"(e.g. start notepad, open a browser for a screenshot). Same arguments as exec. " +
 			"Fails with 'unavailable' if nobody is logged in. Use plain exec for everything else: " +
-			"it does not depend on a session, and processes it starts survive logoff."})
+			"it does not depend on a session, and processes it starts survive logoff."}
+	reg.Register(unlockGate{Capability: guiExec, bridge: b, logger: logger})
 }
 
 // runGUIHelper serves the GUI capabilities on a loopback address for the

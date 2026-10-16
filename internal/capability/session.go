@@ -39,6 +39,19 @@ func unsupported(what string) error {
 	return &protocol.Error{Code: protocol.CodeUnavailable, Message: what + " is only available on Windows"}
 }
 
+// AutoUnlock signs back in from the lock screen for callers inside the agent
+// (the GUI proxies, before an action that needs a visible desktop), rather than
+// over the wire. It returns ErrNoUnlock where the OS has no such thing.
+func AutoUnlock() (map[string]any, error) {
+	if unlock == nil {
+		return nil, ErrNoUnlock
+	}
+	return unlock.Unlock(false)
+}
+
+// ErrNoUnlock means this build has no way to drive the lock screen.
+var ErrNoUnlock = unsupported("session.unlock")
+
 // --- session.nolock ---
 
 // SessionNoLock stops (or restores) the Windows auto-lock on a passwordless PC.

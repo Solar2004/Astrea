@@ -218,7 +218,7 @@ func run() *log.Logger {
 	var bridge *guibridge.Bridge
 	if *role == roleHeadless {
 		bridge = guibridge.New("ws://"+*guiAddr+"/ws", cfg.Token)
-		registerGUIProxies(reg, bridge)
+		registerGUIProxies(reg, bridge, logger)
 	} else {
 		for _, c := range guiCaps() {
 			reg.Register(c)
