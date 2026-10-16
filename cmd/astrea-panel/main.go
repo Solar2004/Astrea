@@ -63,6 +63,7 @@ type machineStatus struct {
 	Services json.RawMessage `json:"services,omitempty"`  // service.status: servicios/modelos
 	Admin    json.RawMessage `json:"admin,omitempty"`     // admin.status: os, modo, kill switch
 	LastSeen int64           `json:"last_seen,omitempty"` // unix ms de la última respuesta
+	Net      *netQuality     `json:"net,omitempty"`       // tailscale ping: directa o por relé, latencia
 }
 
 type panel struct {
@@ -78,6 +79,8 @@ type panel struct {
 	hist     historyStore     // CPU/RAM/GPU over the last 2 h (history.go)
 	work     *workCache       // last known tasks per machine (workcache.go)
 	events   *eventLog        // fleet notices (events.go)
+	uptimes  *uptimeCache     // last sys.uptime per machine (fleetinfo.go)
+	nets     sync.Map         // machine name → netQuality
 }
 
 func main() {
@@ -96,7 +99,7 @@ func main() {
 
 	logger := log.New(os.Stderr, "astrea-panel ", log.LstdFlags)
 
-	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}, hist: historyStore{rings: map[string]*ring{}}, work: loadWorkCache(workCachePath()), events: newEventLog()}
+	p := &panel{ws: *ws, token: *token, name: *name, cfgPath: *cfgPath, logger: logger, clients: map[string]*transport.ReconnectingClient{}, lastSeen: map[string]int64{}, hist: historyStore{rings: map[string]*ring{}}, work: loadWorkCache(workCachePath()), events: newEventLog(), uptimes: loadUptimeCache()}
 	// Load once now (for the startup log), but the stats handler reloads on
 	// every request, so adding machines to panel.json needs no restart and an
 	// empty/missing config is not fatal — the panel just shows nothing yet.
@@ -107,6 +110,7 @@ func main() {
 	startTelegram(p, telegramConfigPath(*cfgPath), logger)
 	startHermes(p, hermesConfigPath(*cfgPath), logger)
 	go p.watch(20 * time.Second)
+	go p.netLoop(context.Background())
 
 	// Go does not know .webmanifest; browsers want this type for the PWA.
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
@@ -135,6 +139,10 @@ func main() {
 	mux.HandleFunc("/api/control", p.handleControl)
 	mux.HandleFunc("/api/input", p.handleInput)
 	mux.HandleFunc("/api/memory", p.handleMemory)
+	mux.HandleFunc("/api/uptime", p.handleUptime)
+	mux.HandleFunc("/api/work/shot", p.handleWorkShot)
+	mux.HandleFunc("/api/cleanup", p.handleCleanup)
+	mux.HandleFunc("/api/ui", p.handleUI)
 
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
@@ -205,7 +213,7 @@ func (p *panel) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *panel) poll(ctx context.Context, m Machine) machineStatus {
-	st := machineStatus{Name: m.Name, Base: baseURL(m.WS)}
+	st := machineStatus{Name: m.Name, Base: baseURL(m.WS), Net: p.net(m.Name)}
 	p.mu.Lock()
 	client := p.clients[m.WS]
 	p.mu.Unlock()

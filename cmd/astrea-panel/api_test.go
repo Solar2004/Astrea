@@ -52,3 +52,17 @@ func TestRingWrapsOldestFirst(t *testing.T) {
 		t.Fatalf("len %d first %v last %v", len(h.CPU), h.CPU[0], h.CPU[len(h.CPU)-1])
 	}
 }
+
+func TestParsePing(t *testing.T) {
+	q := parsePing("pong from desktop-0tvf884 (100.125.105.40) via 193.236.76.248:1450 in 21ms\n")
+	if !q.Direct || q.MS != 21 || q.Via != "193.236.76.248:1450" {
+		t.Errorf("direct = %+v", q)
+	}
+	q = parsePing("pong from f3-1 (100.1.2.3) via DERP(mad) in 112ms\n")
+	if q.Direct || q.MS != 112 || q.Via != "mad" {
+		t.Errorf("relay = %+v", q)
+	}
+	if q = parsePing("ping \"100.65.90.69\" timed out\nno reply\n"); q.Error == "" {
+		t.Errorf("timeout = %+v", q)
+	}
+}
