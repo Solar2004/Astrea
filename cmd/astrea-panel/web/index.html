@@ -499,6 +499,31 @@
                 background: var(--surface); border: 2px solid var(--border); color: var(--on-primary); }
   .tile.picked .tick { background: var(--primary); border-color: var(--primary); }
   .tile .tick .icon { width: 14px; height: 14px; stroke-width: 2.6; }
+  /* uptime page */
+  .up-card { margin-bottom: 12px; }
+  .up-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .up-head a { color: var(--text); } .up-head b { font-size: 15px; font-weight: 650; }
+  .up-head .pct { margin-left: auto; color: var(--text-2); font-weight: 600; }
+  .ustrip { display: flex; gap: 2px; height: 34px; }
+  .ustrip i { flex: 1; min-width: 2px; border-radius: 2px; background: var(--track); }
+  .ustrip i.l1, .legend i.lg.l1 { background: color-mix(in srgb, var(--primary) 35%, var(--track)); }
+  .ustrip i.l2, .legend i.lg.l2 { background: color-mix(in srgb, var(--primary) 60%, var(--track)); }
+  .ustrip i.l3, .legend i.lg.l3 { background: color-mix(in srgb, var(--primary) 82%, var(--track)); }
+  .ustrip i.l4, .legend i.lg.l4 { background: var(--primary); }
+  .ustrip i.crash { background: var(--bad); }
+  .ustrip i.nd { background: transparent; box-shadow: inset 0 0 0 1px var(--divider); }
+  .ustrip i:hover { box-shadow: 0 0 0 2px var(--text-2); }
+  .legend i.lg + i.lg { margin-left: -3px; }
+  .up-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 6px; }
+  .fchart { display: grid; grid-template-columns: 24px 1fr; gap: 8px; margin-top: 14px; }
+  .fchart svg { display: block; width: 100%; height: 160px; overflow: visible; }
+  .fchart .yax { display: flex; flex-direction: column; justify-content: space-between; font-size: 11px; color: var(--text-3); text-align: right; }
+  .xax { display: grid; grid-template-columns: repeat(7, 1fr); margin: 6px 0 0 32px; font-size: 11px; color: var(--text-3); }
+  .ttip { position: fixed; z-index: 50; pointer-events: none; display: none; min-width: 170px; max-width: 260px; background: var(--surface); border: 1px solid var(--border);
+          border-radius: 10px; padding: 8px 11px; font-size: 12px; box-shadow: var(--shadow-md); }
+  .ttip b { display: block; margin-bottom: 4px; font-weight: 600; }
+  .ttip .r { display: flex; justify-content: space-between; gap: 14px; color: var(--text-2); }
+  .ttip .r.t-bad { color: var(--bad); }
   .shotcard img { display: block; width: 100%; border-radius: var(--radius-sm); margin-top: 12px; cursor: zoom-in; }
 
   @keyframes fade { from { opacity: 0; } }
@@ -581,6 +606,7 @@
     <a class="nav-item" href="#/tareas" data-route="tasks"><svg class="icon"><use href="#i-tasks"/></svg>Tareas<span class="end tnum" id="navTasks"></span></a>
     <a class="nav-item" href="#/avisos" data-route="events"><svg class="icon"><use href="#i-bell"/></svg>Avisos<span id="navEvents"></span></a>
     <a class="nav-item" href="#/visual" data-route="visual"><svg class="icon"><use href="#i-wall"/></svg>Visualización</a>
+    <a class="nav-item" href="#/encendido" data-route="uptime"><svg class="icon"><use href="#i-power"/></svg>Encendido</a>
     <div class="nav-label">Equipos</div>
     <nav id="navMachines"></nav>
     <div class="nav-label">Ayuda</div>
@@ -825,6 +851,7 @@ function route() {
   if (h === "/ayuda") return { name: "help" };
   if (h === "/avisos") return { name: "events" };
   if (h === "/visual") return { name: "visual" };
+  if (h === "/encendido") return { name: "uptime" };
   return { name: "overview" };
 }
 const TABS = [["perf", "Rendimiento", "rendimiento"], ["svc", "Servicios", "servicios"], ["work", "Tareas", "tareas"], ["hist", "Historial", "historial"], ["mem", "Memoria", "memoria"], ["act", "Actividad", "actividad"], ["sys", "Sistema", "sistema"]];
@@ -1943,6 +1970,121 @@ function tabMemory(m, key) {
   ];
 }
 
+/* fleet uptime page (Better Stack style): one strip of days per PC + PCs on per hour */
+// days(): + crashes per day and whether the agent/OS log covers that day at all.
+function dayStatsFull(rep, n) {
+  const ds = days(rep, n);
+  const first = rep?.spans?.length ? Date.parse(rep.spans[0].start) : Infinity;
+  for (const d of ds) { d.crash = 0; d.nodata = d.d.getTime() + 864e5 <= first; }
+  for (const sp of rep?.spans || []) if (sp.end_kind === "crash") {
+    const i = Math.round((dayStart(Date.parse(sp.end)) - ds[0].d) / 864e5);
+    if (ds[i]) ds[i].crash++;
+  }
+  return ds;
+}
+const onLevel = ms => { const h = ms / 36e5; return h >= 20 ? "l4" : h >= 12 ? "l3" : h >= 6 ? "l2" : h > 0 ? "l1" : ""; };
+const tip = document.createElement("div");
+tip.className = "ttip"; tip.setAttribute("role", "tooltip");
+document.body.append(tip);
+function showTip(ev, title, rows) {
+  tip.replaceChildren($("b", {}, title), ...rows.map(([k, v, tone]) => $("div", { class: "r" + (tone ? " t-" + tone : "") }, $("span", {}, k), $("span", { class: "tnum" }, v))));
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.min(innerWidth - r.width - 8, Math.max(8, ev.clientX - r.width / 2)) + "px";
+  tip.style.top = (ev.clientY - r.height - 14 < 8 ? ev.clientY + 18 : ev.clientY - r.height - 14) + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+
+function uptimeStrip(name, rep, n) {
+  const ds = dayStatsFull(rep, n);
+  return $("div", { class: "ustrip", role: "img", "aria-label": `Encendido de ${name} en los últimos ${n} días`, onmouseleave: hideTip },
+    ds.map(d => $("i", { class: d.nodata ? "nd" : d.crash ? "crash" : onLevel(d.on) || null,
+      onmousemove: ev => showTip(ev, dayName(d.d), d.nodata ? [["Sin datos", "antes de Astrea"]] : [
+        ["Encendida", d.on ? hm(d.on) : "apagada"],
+        d.crash ? ["Apagones", String(d.crash), "bad"] : null,
+        ["Acciones de la IA", String(d.actions)]].filter(Boolean)) })));
+}
+
+// PCs on per hour over the last 7 days: one series, crosshair tooltip with their names.
+function fleetOnChart(reps) {
+  const H = 160, W = 1000, hours = 7 * 24;
+  const start = dayStart(Date.now()); start.setDate(start.getDate() - 6);
+  const t0 = start.getTime(), sets = Array.from({ length: hours }, () => new Set());
+  for (const [name, rep] of reps) eachHourOn(rep, t0, (h, ms) => { const i = Math.round((h - t0) / 36e5); if (sets[i] && ms > 0) sets[i].add(name); });
+  const nowI = Math.min(hours - 1, Math.floor((Date.now() - t0) / 36e5));
+  const max = Math.max(1, reps.length);
+  const x = i => i / (hours - 1) * W, y = v => H - 2 - v / max * (H - 8);
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Equipos encendidos por hora, últimos 7 días");
+  const mk = (tag, attrs) => { const e = document.createElementNS(SVG, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
+  const ticks = max >= 2 ? [max, Math.round(max / 2), 0] : [max, 0];
+  for (const v of ticks) mk("line", { x1: 0, x2: W, y1: y(v), y2: y(v), stroke: "var(--divider)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" });
+  for (let d = 1; d < 7; d++) mk("line", { x1: x(d * 24), x2: x(d * 24), y1: 0, y2: H, stroke: "var(--divider)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" });
+  const pts = sets.slice(0, nowI + 1).map((s, i) => `${x(i).toFixed(1)},${y(s.size).toFixed(1)}`).join(" ");
+  mk("polygon", { points: `0,${H} ${pts} ${x(nowI)},${H}`, fill: "var(--primary-area)" });
+  mk("polyline", { points: pts, fill: "none", stroke: "var(--primary)", "stroke-width": 2, "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" });
+  const cross = mk("line", { y1: 0, y2: H, stroke: "var(--text-3)", "stroke-width": 1, "vector-effect": "non-scaling-stroke", visibility: "hidden" });
+  svg.addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(nowI, Math.round((ev.clientX - r.left) / r.width * (hours - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    const t = new Date(t0 + i * 36e5), names = [...sets[i]].sort();
+    showTip(ev, `${dayName(t)}, ${t.getHours()}:00`, [[plural(names.length, "equipo encendido", "equipos encendidos"), ""], ...names.map(n => ["", n])]);
+  });
+  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+  const labels = Array.from({ length: 7 }, (_, d) => { const t = new Date(start); t.setDate(t.getDate() + d); return $("span", {}, t.toLocaleDateString([], { weekday: "short", day: "numeric" })); });
+  return $("div", { class: "card" },
+    $("h3", {}, icon("activity"), "Equipos encendidos por hora"),
+    $("div", { class: "model" }, "Últimos 7 días · de " + max + " " + (max === 1 ? "equipo" : "equipos")),
+    $("div", { class: "fchart" }, $("div", { class: "yax tnum" }, ticks.map(v => $("span", {}, String(v)))), svg),
+    $("div", { class: "xax" }, labels));
+}
+
+function viewUptime(list) {
+  const n = S.ui.uptimeDays === 30 ? 30 : 90;
+  const url = "/api/uptime?" + q({ days: n });
+  const c = load(url, 60000);
+  const head = $("div", { class: "page-head" },
+    $("div", {}, $("h1", {}, "Encendido"),
+      $("div", { class: "sub" }, "Cuándo estuvo prendido cada equipo, día a día. Lo guarda cada PC, así que no hay huecos aunque el panel estuviera apagado.")),
+    $("div", { class: "actions" }, $("div", { class: "segmented sm", role: "tablist", "aria-label": "Periodo" },
+      [[30, "30 días"], [90, "90 días"]].map(([d, l]) => $("button", { role: "tab", "aria-selected": String(n === d), onclick: () => { S.ui.uptimeDays = d; saveUI(); draw(); } }, l)))));
+  if (!c.t) return [head, $("div", { class: "card empty" }, "Reuniendo el historial de los equipos…")];
+  const byName = new Map((c.data || []).map(x => [x.machine, x]));
+  const reps = list.map(m => [m.name, byName.get(m.name)?.report]).filter(([, r]) => r);
+  const rows = list.map((m, idx) => {
+    const key = keyOf(m, idx), p = presence(m, key), e = byName.get(m.name) || {}, rep = e.report;
+    const title = titleOf(m, idx, m.stats || lastGood.get(key));
+    if (!rep) return { missing: $("a", { class: "li", href: machineHref(key) },
+      $("span", { class: "dot t-" + p.tone }), $("div", { class: "k" }, title, $("small", {}, p.label)),
+      $("div", { class: "v muted" }, /actualízalo/.test(e.error || "") ? "Su agente aún no guarda el historial: actualízalo" : m.online ? "Sin historial todavía" : "No responde y no hay copia guardada")) };
+    const ds = dayStatsFull(rep, n), known = ds.filter(d => !d.nodata);
+    const onMs = known.reduce((a, d) => a + d.on, 0), crashes = ds.reduce((a, d) => a + d.crash, 0);
+    const share = known.length ? onMs / (known.length * 864e5) * 100 : null;
+    return $("div", { class: "card up-card" },
+      $("div", { class: "up-head" },
+        $("span", { class: "dot t-" + p.tone, title: p.label }),
+        $("a", { href: machineHref(key, "hist") }, $("b", {}, title)),
+        $("span", { class: "muted" }, p.label),
+        e.stale ? chip("neutral", "Datos de " + when(e.cached_at), false) : null,
+        crashes ? $("span", { class: "chip t-bad" }, icon("alert"), plural(crashes, "apagón", "apagones")) : null,
+        $("span", { class: "pct tnum", title: "Del tiempo con datos" }, share != null ? `${share.toFixed(1)} % encendida` : "—")),
+      uptimeStrip(title, rep, n),
+      $("div", { class: "up-axis" }, $("span", {}, `hace ${n} días`), $("span", {}, hm(onMs) + " encendida en total"), $("span", {}, "hoy")));
+  });
+  return [head,
+    reps.length ? fleetOnChart(reps) : null,
+    $("div", { class: "legend", style: "margin:18px 0 12px" },
+      $("span", {}, $("i"), "Apagada"),
+      $("span", {}, ["l1", "l2", "l3", "l4"].map(l => $("i", { class: "lg " + l })), "Horas encendida (menos de 6, 6, 12, 20+)"),
+      $("span", {}, $("i", { style: "background:var(--bad)" }), "Hubo un apagón"),
+      $("span", {}, $("i", { style: "box-shadow:inset 0 0 0 1px var(--text-3);background:transparent" }), "Sin datos")),
+    rows.filter(r => !r.missing),
+    rows.some(r => r.missing) ? [$("div", { class: "list-title" }, "Sin historial"), $("div", { class: "list" }, rows.filter(r => r.missing).map(r => r.missing))] : null,
+    $("div", { class: "list-foot" }, "Pasa el ratón por una barra para ver el día. Lo anterior a instalar Astrea sale del registro del sistema de cada PC.")];
+}
+
 /* machine history: when it was on and what the AI did, hour by hour */
 const END = { running: ["good", "Encendida"], off: ["neutral", "Apagado normal"], sleep: ["neutral", "Suspendida"], crash: ["bad", "Apagón o reinicio forzado"] };
 function tabHistory(m, key) {
@@ -2173,6 +2315,7 @@ function draw() {
     else if (r.name === "machine") content = viewMachine(S.list, r.id);
     else if (r.name === "tasks") content = viewTasks(S.list);
     else if (r.name === "visual") content = viewVisual(S.list);
+    else if (r.name === "uptime") content = viewUptime(S.list);
     else if (r.name === "task") content = viewTask(r.machine, r.id);
     else content = viewOverview(S.list);
   } catch (e) {
@@ -2182,7 +2325,7 @@ function draw() {
   }
   view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
   document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea"
-    : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "visual" ? "Visualización — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
+    : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "visual" ? "Visualización — Astrea" : r.name === "uptime" ? "Encendido — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
 }
 
 /* ---------- live window ---------- */
@@ -2404,7 +2547,7 @@ let pressing = false;
 addEventListener("pointerdown", () => { pressing = true; }, true);
 addEventListener("pointerup", () => { pressing = false; }, true);
 addEventListener("pointercancel", () => { pressing = false; }, true);
-const holdDraw = () => !!(pressing || document.querySelector(".spark svg:hover") || route().name === "help" ||
+const holdDraw = () => !!(pressing || document.querySelector(".spark svg:hover, .fchart svg:hover, .ustrip:hover") || route().name === "help" ||
                           document.activeElement?.matches?.("input, textarea, select"));
 async function loop() {
   try {
