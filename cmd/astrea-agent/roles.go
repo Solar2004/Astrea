@@ -76,7 +76,15 @@ var lastAutoUnlock struct {
 }
 
 func (u unlockGate) Invoke(ctx context.Context, payload json.RawMessage, emit capability.Emit) (any, error) {
-	u.ensureUnlocked(ctx)
+	// peek: only look (the panel's thumbnails). Signing in would hide the very
+	// thing the owner wants to see: that the PC is locked.
+	var p struct {
+		Peek bool `json:"peek"`
+	}
+	_ = json.Unmarshal(payload, &p)
+	if !p.Peek {
+		u.ensureUnlocked(ctx)
+	}
 	return u.Capability.Invoke(ctx, payload, emit)
 }
 

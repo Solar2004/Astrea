@@ -39,7 +39,8 @@ func (ScreenCapture) Describe() Descriptor {
 				"display": {"type": "integer", "description": "Display index (0-based). -1 = all displays combined. Default -1."},
 				"max_width": {"type": "integer", "description": "Downscale to at most this width in pixels. Default 1568; 0 = full resolution."},
 				"format": {"type": "string", "enum": ["jpeg", "png"], "description": "Default jpeg (much smaller)."},
-				"quality": {"type": "integer", "description": "JPEG quality 1-100. Default 80."}
+				"quality": {"type": "integer", "description": "JPEG quality 1-100. Default 80."},
+				"peek": {"type": "boolean", "description": "Only look: if the PC is on the lock screen, do not sign in first (default signs in)."}
 			}
 		}`),
 	}

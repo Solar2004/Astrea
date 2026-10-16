@@ -66,7 +66,7 @@ func (s *Shots) Take(id string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 		defer cancel()
-		res, err := s.Reg.Dispatch(ctx, "screen.capture", json.RawMessage(`{"max_width":1280,"quality":70,"format":"jpeg"}`), func(protocol.StreamChunk) {})
+		res, err := s.Reg.Dispatch(ctx, "screen.capture", json.RawMessage(`{"max_width":1280,"quality":70,"format":"jpeg","peek":true}`), func(protocol.StreamChunk) {})
 		if err != nil {
 			return
 		}

@@ -179,10 +179,17 @@ func (p *panel) netLoop(ctx context.Context) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 				defer cancel()
-				out, _ := exec.CommandContext(cctx, bin, "ping", "--c", "1", "--timeout", "5s", u.Hostname()).CombinedOutput()
-				p.nets.Store(m.Name, parsePing(string(out)))
+				// One lost ping is noise (a path being renegotiated): retry once.
+				var q netQuality
+				for try := 0; try < 2; try++ {
+					out, _ := exec.CommandContext(cctx, bin, "ping", "--c", "1", "--timeout", "4s", u.Hostname()).CombinedOutput()
+					if q = parsePing(string(out)); q.Error == "" {
+						break
+					}
+				}
+				p.nets.Store(m.Name, q)
 			}()
 		}
 		wg.Wait()
@@ -271,7 +278,7 @@ func (p *panel) handleThumb(w http.ResponseWriter, r *http.Request) {
 		if p.workTimeout(name) < 8*time.Second {
 			timeout = 3 * time.Second
 		}
-		data, err := p.frame(context.Background(), name, width, 55, timeout)
+		data, err := p.frame(context.Background(), name, width, 55, timeout, true)
 		thumbsMu.Lock()
 		thumbs[key] = &thumb{data: data, at: time.Now(), err: err}
 		delete(thumbsIn, key)

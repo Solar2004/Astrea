@@ -42,9 +42,14 @@ type liveFrame struct {
 	} `json:"images"`
 }
 
-func (p *panel) frame(ctx context.Context, machine string, width, quality int, timeout time.Duration) ([]byte, error) {
+// frame captures the screen; peek leaves a locked PC locked (thumbnails).
+func (p *panel) frame(ctx context.Context, machine string, width, quality int, timeout time.Duration, peek ...bool) ([]byte, error) {
 	var f liveFrame
-	if _, err := p.call(ctx, machine, "screen.capture", map[string]any{"max_width": width, "quality": quality, "format": "jpeg"}, &f, timeout); err != nil {
+	args := map[string]any{"max_width": width, "quality": quality, "format": "jpeg"}
+	if len(peek) > 0 && peek[0] {
+		args["peek"] = true
+	}
+	if _, err := p.call(ctx, machine, "screen.capture", args, &f, timeout); err != nil {
 		return nil, err
 	}
 	if len(f.Images) == 0 {
