@@ -45,6 +45,7 @@ var (
 	pOpenInputDesktop         = uUser32.NewProc("OpenInputDesktop")
 	pGetUserObjectInformation = uUser32.NewProc("GetUserObjectInformationW")
 	pKeybdEvent               = uUser32.NewProc("keybd_event")
+	pMouseEvent               = uUser32.NewProc("mouse_event")
 	pGetForegroundWindow      = uUser32.NewProc("GetForegroundWindow")
 	pGetWindowThreadProcessId = uUser32.NewProc("GetWindowThreadProcessId")
 )
@@ -238,6 +239,25 @@ func unlockDesktopPhase(logger *log.Logger, result string, capture bool) int {
 	res["foreground_before"] = foregroundProcess()
 	logger.Printf("unlock: before: desktop=%q foreground=%q", inputDesktopName(), foregroundProcess())
 
+	// No lock screen in sight may just be the monitor asleep over a signed-in
+	// desktop (no foreground window either way). Wake it with a 1-pixel mouse
+	// nudge, which types nothing, and look again: Space and Enter must never
+	// reach an open app (Enter in a terminal runs whatever is on the line).
+	if !lockScreenUp() {
+		wakeDisplay()
+		time.Sleep(1500 * time.Millisecond)
+		attach()
+		if !lockScreenUp() {
+			fg := foregroundProcess()
+			res["desktop_after"], res["foreground_after"] = inputDesktopName(), fg
+			res["unlocked"] = fg != ""
+			res["note"] = "no lock screen after waking the display; no keys sent"
+			writeResult(result, res)
+			logger.Printf("unlock: no lock screen (foreground %q), no keys sent", fg)
+			return 0
+		}
+	}
+
 	if capture {
 		if img := captureWinlogon(logger); img != nil {
 			res["images"] = []map[string]string{*img}
@@ -284,6 +304,29 @@ func stillLocked() bool {
 		return true
 	}
 	return false
+}
+
+// lockScreenUp: the curtain or the sign-in UI is visibly in front. Unlike
+// stillLocked, "no foreground window" does not count: that is also a
+// signed-in desktop with the monitor asleep.
+func lockScreenUp() bool {
+	if name := inputDesktopName(); name != "" && !strings.EqualFold(name, "Default") {
+		return true
+	}
+	switch strings.ToLower(foregroundProcess()) {
+	case "lockapp.exe", "logonui.exe":
+		return true
+	}
+	return false
+}
+
+// wakeDisplay nudges the mouse one pixel and back.
+func wakeDisplay() {
+	const mouseeventfMove = 0x0001
+	one, minusOne := int32(1), int32(-1)
+	pMouseEvent.Call(mouseeventfMove, uintptr(uint32(one)), 0, 0, 0)
+	time.Sleep(40 * time.Millisecond)
+	pMouseEvent.Call(mouseeventfMove, uintptr(uint32(minusOne)), 0, 0, 0)
 }
 
 // tapKey presses and releases a virtual key via keybd_event (simple and works
