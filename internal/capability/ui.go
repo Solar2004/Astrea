@@ -72,7 +72,7 @@ func (UISnapshot) Describe() Descriptor {
 			"menus) with their name, role and position — not a screenshot, so far fewer tokens and exact labels. Then act " +
 			"with ui.act by id. Works on native Windows apps (Win32/WinUI/Office). If the list is empty or misses what you " +
 			"need (a game, a canvas), fall back to a screenshot or vision.locate. window filters to a top-level window whose " +
-			"title contains that text.",
+			"title contains that text; window=\"taskbar\" reads the Windows taskbar (Start, pinned and open apps).",
 		InputSchema: json.RawMessage(`{"type": "object", "properties": {"window": {"type": "string", "description": "Only this top-level window (substring of its title). Default: the foreground one."}}}`),
 	}
 }
@@ -105,7 +105,8 @@ func (UIFind) Describe() Descriptor {
 	return Descriptor{
 		Name: "ui.find",
 		Description: "Find interactive elements of the foreground window whose name contains text (case-insensitive). A quick " +
-			"way to locate one control without reading the whole snapshot. Returns the same ids as ui.snapshot.",
+			"way to locate one control without reading the whole snapshot. Returns the same ids as ui.snapshot. " +
+			"window works as in ui.snapshot (\"taskbar\" for the taskbar's buttons).",
 		InputSchema: json.RawMessage(`{"type": "object", "properties": {"text": {"type": "string"}, "window": {"type": "string"}}, "required": ["text"]}`),
 	}
 }

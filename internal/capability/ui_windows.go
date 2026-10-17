@@ -56,7 +56,11 @@ public class AstreaFg { [DllImport("user32.dll")] public static extern IntPtr Ge
 $AE=[System.Windows.Automation.AutomationElement]
 $TS=[System.Windows.Automation.TreeScope]
 $want='%s'
-if ($want -ne '') {
+if ($want -eq 'taskbar') {
+  # The taskbar has no title: find it by class (its buttons are the open apps).
+  $root=$AE::RootElement.FindFirst($TS::Children,(New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty,'Shell_TrayWnd')))
+  if (-not $root) { '[]'; exit }
+} elseif ($want -ne '') {
   $root=$null
   foreach ($w in $AE::RootElement.FindAll($TS::Children,[System.Windows.Automation.Condition]::TrueCondition)) {
     if ($w.Current.Name -and $w.Current.Name.ToLower().Contains($want.ToLower())) { $root=$w; break }

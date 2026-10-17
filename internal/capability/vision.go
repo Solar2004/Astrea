@@ -94,8 +94,8 @@ func (VisionLocate) Describe() Descriptor {
 	return Descriptor{
 		Name: "vision.locate",
 		Description: "Find something on screen by description, using the local vision model on this PC's GPU, and return its " +
-			"screen coordinates (x, y). Use it only when ui.snapshot (native apps) and browser.read (web) cannot see the " +
-			"target — a game, a canvas, a custom-drawn app. instruction is what to find, e.g. \"the red Submit button\". " +
+			"screen coordinates (x, y). Last resort: windows are window.set, app controls ui.find/ui.act, web pages " +
+			"browser.*; use this only when those cannot see the target — a game, a canvas, a custom-drawn app. instruction is what to find, e.g. \"the red Submit button\". " +
 			"With click=true it also clicks there. Describe the exact spot to click, not just the control: in File " +
 			"Explorer the address bar is a row of folder buttons (clicking one navigates), so ask for \"the empty space " +
 			"at the right end of the File Explorer address bar\" to type a path. Make sure the window is already on " +

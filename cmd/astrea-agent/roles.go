@@ -54,6 +54,8 @@ func guiCaps() []capability.Capability {
 		capability.UISnapshot{},
 		capability.UIFind{},
 		capability.UIAct{},
+		capability.WindowList{},
+		capability.WindowSet{},
 	}
 }
 
@@ -75,7 +77,7 @@ func desktopAction(method string) bool {
 	switch {
 	case strings.HasPrefix(method, "mouse."), strings.HasPrefix(method, "key."),
 		strings.HasPrefix(method, "input."), strings.HasPrefix(method, "record."),
-		method == "screen.capture", method == "gui.exec", method == "clipboard.set":
+		method == "screen.capture", method == "gui.exec", method == "clipboard.set", method == "window.set":
 		return true
 	}
 	return false
