@@ -2,7 +2,11 @@ package capability
 
 import (
 	"context"
+	"fmt"
+	"image"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -113,5 +117,32 @@ func TestQwenResizeMapsBack(t *testing.T) {
 		if math.Abs(x-p.x) > 10 || math.Abs(y-p.y) > 10 {
 			t.Errorf("model (%v,%v) → screen (%.0f,%.0f), want ≈(%v,%v)", p.mx, p.my, x, y, p.x, p.y)
 		}
+	}
+}
+
+// refine maps the crop answer back (the crop is below the 1024-token minimum,
+// so the server upscales it) and drops answers that jump away.
+func TestVisionRefine(t *testing.T) {
+	answer := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, answer)
+	}))
+	defer srv.Close()
+	mgr := &VisionManager{cfg: VisionConfig{Endpoint: srv.URL, Model: "ui-tars", Coords: "pixel"}}
+	c := VisionLocate{Mgr: mgr}
+	img := image.NewRGBA(image.Rect(0, 0, 900, 600)) // crop: 300×200 around the guess
+	rw, rh := qwenResize(300, 200)
+
+	// First guess (450,300) → crop origin (300,200). The model says the
+	// crop's centre-right, 20 px from the guess: accepted.
+	answer = fmt.Sprintf("click(point='<point>%v %v</point>')", 170*rw/300, 100*rh/200)
+	x, y, ok := c.refine(context.Background(), "the button", img, 450, 300)
+	if !ok || math.Abs(x-470) > 1 || math.Abs(y-300) > 1 {
+		t.Fatalf("refine = (%v,%v,%v), want (470,300,true)", x, y, ok)
+	}
+	// An answer in the crop's corner is another element: keep the first guess.
+	answer = fmt.Sprintf("click(point='<point>%v %v</point>')", 5*rw/300, 5*rh/200)
+	if x, y, ok := c.refine(context.Background(), "the button", img, 450, 300); ok || x != 450 || y != 300 {
+		t.Fatalf("jump not dropped: (%v,%v,%v)", x, y, ok)
 	}
 }
