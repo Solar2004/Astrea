@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,10 +34,25 @@ var NoSession = &protocol.Error{
 		"Log in on the machine (or enable autologon) and retry; everything else (exec, services, downloads…) keeps working.",
 }
 
+// helperDown is the error returned when the helper is not reachable but
+// someone IS signed in: the helper died (e.g. its restart after an update was
+// blocked), so "nobody is logged in" would be a lie.
+func helperDown(user string) error {
+	return &protocol.Error{
+		Code: protocol.CodeUnavailable,
+		Message: fmt.Sprintf("the GUI helper (screen, mouse, keyboard) is not running although %s is signed in on this PC; "+
+			"the agent starts it again by itself within a minute, retry then. Everything else (exec, services, downloads…) keeps working.", user),
+	}
+}
+
 // Bridge is a lazily (re)connected client to the GUI helper.
 type Bridge struct {
 	wsURL string
 	token string
+
+	// SignedIn, if set, names the user signed in at the console ("" if
+	// nobody). It tells "nobody logged in" from "the helper is down".
+	SignedIn func() string
 
 	mu  sync.Mutex
 	cur *transport.Client
@@ -91,7 +107,7 @@ func (b *Bridge) Call(ctx context.Context, method string, payload json.RawMessag
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			return nil, NoSession
+			return nil, b.unreachable()
 		}
 		res, err := c.Call(ctx, method, payload)
 		switch {
@@ -101,11 +117,22 @@ func (b *Bridge) Call(ctx context.Context, method string, payload json.RawMessag
 		case errors.Is(err, transport.ErrNotSent), errors.Is(err, transport.ErrConnLost):
 			b.drop(c)
 			if errors.Is(err, transport.ErrNotSent) {
-				return nil, NoSession
+				return nil, b.unreachable()
 			}
 		}
 		return res, err
 	}
+}
+
+// unreachable is the error for a helper that does not answer: NoSession,
+// unless someone is signed in, in which case the helper itself is down.
+func (b *Bridge) unreachable() error {
+	if b.SignedIn != nil {
+		if u := b.SignedIn(); u != "" {
+			return helperDown(u)
+		}
+	}
+	return NoSession
 }
 
 // Remote advertises a capability locally but runs it in the GUI helper.

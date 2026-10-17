@@ -33,11 +33,20 @@ func requestRestart(stop func()) {
 	}()
 }
 
+// respawnTries and respawnWait bound how long a failed respawn is retried.
+const (
+	respawnTries = 8
+	respawnWait  = 5 * time.Second
+)
+
 // restartAfterExit brings the agent back after a requested restart: systemd
 // does it by itself on our exit code, otherwise we spawn the new binary.
 func restartAfterExit(logger *log.Logger) bool {
-	if !restartRequested.Load() || !restarting.CompareAndSwap(false, true) {
-		return false // not asked, or already done (normal exit vs. the shutdown watchdog)
+	if !restartRequested.Load() {
+		return false
+	}
+	if !restarting.CompareAndSwap(false, true) {
+		select {} // the other caller (main vs. the shutdown watchdog) is respawning and exits for us
 	}
 	if update.Supervised() {
 		logger.Printf("restarting: exit %d, systemd starts the new binary", update.ExitRestart)
@@ -45,7 +54,17 @@ func restartAfterExit(logger *log.Logger) bool {
 	}
 	exe, err := update.Self()
 	if err == nil {
-		err = update.Respawn(exe, os.Args[1:])
+		// Retry: Smart App Control can refuse a just-replaced binary for a
+		// few seconds while it looks it up, then let it run.
+		for i := 0; i < respawnTries; i++ {
+			if i > 0 {
+				logger.Printf("restart attempt %d failed: %v; retrying", i, err)
+				time.Sleep(respawnWait)
+			}
+			if err = update.Respawn(exe, os.Args[1:]); err == nil {
+				break
+			}
+		}
 	}
 	if err != nil {
 		logger.Printf("restart failed: %v (the agent comes back at the next boot/logon)", err)
