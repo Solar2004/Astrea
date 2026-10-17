@@ -247,7 +247,9 @@ func (c VisionLocate) query(ctx context.Context, instruction, mime, b64 string) 
 		}},
 	}
 	buf, _ := json.Marshal(body)
-	hctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// 16 GB GPUs answer in seconds; a 4 GB GPU running part of the model on
+	// the CPU takes minutes (a GTX 1650 laptop did not finish in 3).
+	hctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	httpReq, err := http.NewRequestWithContext(hctx, "POST", cfg.Endpoint, bytes.NewReader(buf))
 	if err != nil {
