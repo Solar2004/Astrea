@@ -150,10 +150,10 @@ type ServiceStatus struct {
 	Builtin func(context.Context) []Builtin
 }
 
-// Builtin is a service Astrea provides by itself. State is one of missing
-// (not there and nothing is fetching it), installing, paused (switched off
-// before it finished), error (installing, waiting to retry), ready
-// (installed, idle) or running.
+// Builtin is a service Astrea provides by itself. State is one of installing,
+// error (installing, waiting to retry), ready (installed, idle), running,
+// paused (switched off before it finished), off (switched off before it
+// began) or unsupported (this PC cannot run it; Reason says why).
 type Builtin struct {
 	Name     string   `json:"name"`
 	Title    string   `json:"title"`
@@ -165,6 +165,7 @@ type Builtin struct {
 	Total    int64    `json:"total,omitempty"`
 	ETASec   float64  `json:"eta_sec,omitempty"`
 	Error    string   `json:"error,omitempty"`
+	Reason   string   `json:"reason,omitempty"` // why it is unsupported
 }
 
 func (ServiceStatus) Name() string { return "service.status" }

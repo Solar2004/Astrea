@@ -46,6 +46,12 @@ type Provisioner struct {
 	ModelURL  string
 	MMProjURL string
 	Ctx       context.Context // agent lifetime; provisioning runs under this, not a call ctx
+	// Default switches provisioning on when nobody has chosen yet (no state
+	// file): the vision model is required on every PC. vision.setup off wins.
+	Default bool
+	// Unsupported, if set, says why this PC cannot get the model by itself
+	// (no NVIDIA GPU…); Default does not apply then.
+	Unsupported string
 
 	mu      sync.Mutex
 	on      bool
@@ -72,17 +78,25 @@ func (p *Provisioner) llamaServer() string {
 }
 
 // Load reads the persisted on/off flag and, if on, kicks off provisioning.
+// With no saved choice, Default decides.
 func (p *Provisioner) Load() {
-	if b, err := os.ReadFile(p.StateFn); err == nil {
-		var st struct {
-			On bool `json:"on"`
+	b, err := os.ReadFile(p.StateFn)
+	if err != nil {
+		if p.Default && p.Unsupported == "" {
+			if err := p.SetOn(true); err != nil {
+				p.logf("vision provision: %v", err)
+			}
 		}
-		if json.Unmarshal(b, &st) == nil && st.On {
-			p.mu.Lock()
-			p.on = true
-			p.mu.Unlock()
-			go p.loop()
-		}
+		return
+	}
+	var st struct {
+		On bool `json:"on"`
+	}
+	if json.Unmarshal(b, &st) == nil && st.On {
+		p.mu.Lock()
+		p.on = true
+		p.mu.Unlock()
+		go p.loop()
 	}
 }
 
@@ -140,10 +154,14 @@ func (p *Provisioner) Builtin(ctx context.Context) Builtin {
 		b.State, b.Error = "error", errMsg
 	case running:
 		b.State, b.Phase = "installing", phase
-	case !on && fileExists(p.modelPath()):
+	case on:
+		b.State, b.Phase = "installing", "starting"
+	case p.Unsupported != "":
+		b.State, b.Reason = "unsupported", p.Unsupported
+	case fileExists(p.modelPath()):
 		b.State = "paused" // started, then switched off
 	default:
-		b.State = "missing"
+		b.State = "off" // switched off with vision.setup before it began
 	}
 	if b.State == "installing" && dl != "" {
 		if s, err := p.Dloads.Get(ctx, dl, 0); err == nil {
@@ -155,6 +173,20 @@ func (p *Provisioner) Builtin(ctx context.Context) Builtin {
 		}
 	}
 	return b
+}
+
+// VisionUnsupported says why this PC cannot run the provisioned vision model
+// ("" if it can): the runtime Astrea downloads is llama.cpp for Windows+CUDA.
+func VisionUnsupported(ctx context.Context) string {
+	if runtime.GOOS != "windows" {
+		return "only Windows PCs get it automatically (elsewhere: install llama-server and run vision.setup)"
+	}
+	for _, g := range gpuStats(ctx) {
+		if g.Vendor == "NVIDIA" {
+			return ""
+		}
+	}
+	return "no NVIDIA GPU (the bundled llama.cpp needs CUDA)"
 }
 
 func fileExists(path string) bool {

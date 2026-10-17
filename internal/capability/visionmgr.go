@@ -55,7 +55,10 @@ func (m *VisionManager) autoConfigure(dir, llamaServer string) {
 		m.cfg.Serve = []string{llamaServer,
 			"-m", filepath.Join(dir, "model.gguf"),
 			"--mmproj", filepath.Join(dir, "mmproj.gguf"),
-			"-ngl", "99", "--host", "127.0.0.1", "--port", "8100"}
+			// --fit puts as many layers on the GPU as fit (all of them on 16 GB,
+			// part on a 4 GB laptop) instead of failing; a fixed context keeps
+			// --fit from spending VRAM on a 128k KV cache screenshots never need.
+			"--fit", "on", "-c", "8192", "--host", "127.0.0.1", "--port", "8100"}
 	}
 	if m.cfg.Endpoint == "" {
 		m.cfg.Endpoint = "http://127.0.0.1:8100/v1/chat/completions"
@@ -74,6 +77,13 @@ func (m *VisionManager) canServe() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.cfg.Serve) > 0
+}
+
+// Config is a copy of the current config (autoConfigure may have filled it in).
+func (m *VisionManager) Config() VisionConfig {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cfg
 }
 
 // Running reports whether the model process Astrea started is alive.

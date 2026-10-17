@@ -424,9 +424,13 @@ func run() *log.Logger {
 	})
 	builtins = append(builtins, visionProv.Builtin)
 	go visionMgr.Loop(ctx) // auto-stop the model when idle; starts nothing by itself
-	visionProv.Load()      // resume auto-provisioning if it was switched on before
+	// Required on every PC: provisioning starts by itself unless switched off
+	// with vision.setup or this PC cannot run it.
+	visionProv.Default = true
+	visionProv.Unsupported = capability.VisionUnsupported(ctx)
+	visionProv.Load()
 	if cfg.Vision.AutoProvision {
-		_ = visionProv.SetOn(true) // factory default: provision on first run
+		_ = visionProv.SetOn(true) // config forces it on, even over a saved "off"
 	}
 	// Scheduled calls ("lock at 08:00", "run task.x every 30m"), in the PC's local time.
 	sched := schedule.Open(filepath.Join(cfg.DataDir, "schedule.json"), func(ctx context.Context, method string, args json.RawMessage) (any, error) {

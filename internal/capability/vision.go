@@ -57,15 +57,24 @@ var errNoVision = &protocol.Error{Code: protocol.CodeUnavailable, Message: "visi
 
 // VisionLocate finds a target on screen with the local vision model.
 type VisionLocate struct {
-	Cfg      VisionConfig
+	Cfg      VisionConfig // used only without Mgr
 	Dispatch Dispatcher
 	Mgr      *VisionManager
+}
+
+// cfg is the live config: auto-provisioning fills in the endpoint after the
+// capability is registered, so a copy taken at registration stays empty.
+func (c VisionLocate) cfg() VisionConfig {
+	if c.Mgr != nil {
+		return c.Mgr.Config()
+	}
+	return c.Cfg
 }
 
 // RegisterVision adds vision.locate/start/stop/status/setup, all sharing one
 // manager (and provisioner, which may be nil if auto-provisioning is unwired).
 func RegisterVision(r *Registry, mgr *VisionManager, prov *Provisioner, dispatch Dispatcher) {
-	r.Register(VisionLocate{Cfg: mgr.cfg, Dispatch: dispatch, Mgr: mgr})
+	r.Register(VisionLocate{Dispatch: dispatch, Mgr: mgr})
 	r.Register(VisionStart{Mgr: mgr})
 	r.Register(VisionStop{Mgr: mgr})
 	r.Register(VisionStatus{Mgr: mgr, Prov: prov})
@@ -146,7 +155,11 @@ func (c VisionLocate) Invoke(ctx context.Context, payload json.RawMessage, _ Emi
 	}
 	var x, y int
 	if c.coordsPixel() {
-		// Pixels of the (downscaled) image: screen = origin + px/scale.
+		// Pixels of the image as the model saw it (resized to multiples of
+		// 28), back to our image, then screen = origin + px/scale.
+		iw := float64(shot.ScreenWidth) * scale
+		ih := float64(shot.ScreenHeight) * scale
+		mx, my = mx*iw/grid28(iw), my*ih/grid28(ih)
 		x = shot.Origin.X + int(math.Round(mx/scale))
 		y = shot.Origin.Y + int(math.Round(my/scale))
 	} else {
@@ -171,6 +184,13 @@ func (c VisionLocate) Invoke(ctx context.Context, payload json.RawMessage, _ Emi
 	return res, nil
 }
 
+// grid28 is a side as Qwen2.5-VL (UI-TARS 1.5) resizes it: to the nearest
+// multiple of 28 (14 px patches merged 2×2). Answers in "pixel" mode are in
+// that resized image, e.g. 896 rows for an 882-row screenshot.
+func grid28(side float64) float64 {
+	return max(28, math.Round(side/28)*28)
+}
+
 type shotResult struct {
 	Scale        float64 `json:"scale"`
 	ScreenWidth  int     `json:"screen_width"`
@@ -185,7 +205,7 @@ type shotResult struct {
 // coordsPixel reports whether the model answers in image pixels (some
 // Qwen2.5-VL checkpoints) rather than UI-TARS normalized 0-1000 (the default).
 func (c VisionLocate) coordsPixel() bool {
-	return strings.EqualFold(c.Cfg.Coords, "pixel")
+	return strings.EqualFold(c.cfg().Coords, "pixel")
 }
 
 func asShot(v any) (shotResult, error) {
@@ -209,10 +229,11 @@ const groundingPrompt = "You are a GUI agent. You are given a task and your acti
 	"## Action Space\nclick(point='<point>x1 y1</point>')\n\n## User Instruction\nLocate: %s"
 
 func (c VisionLocate) query(ctx context.Context, instruction, mime, b64 string) (float64, float64, error) {
+	cfg := c.cfg()
 	prompt := fmt.Sprintf(groundingPrompt, instruction)
 
 	body := map[string]any{
-		"model":       c.Cfg.Model,
+		"model":       cfg.Model,
 		"temperature": 0,
 		"max_tokens":  64,
 		"messages": []map[string]any{{
@@ -228,13 +249,13 @@ func (c VisionLocate) query(ctx context.Context, instruction, mime, b64 string) 
 	buf, _ := json.Marshal(body)
 	hctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	httpReq, err := http.NewRequestWithContext(hctx, "POST", c.Cfg.Endpoint, bytes.NewReader(buf))
+	httpReq, err := http.NewRequestWithContext(hctx, "POST", cfg.Endpoint, bytes.NewReader(buf))
 	if err != nil {
 		return 0, 0, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if c.Cfg.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.Cfg.APIKey)
+	if cfg.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
@@ -351,7 +372,8 @@ func (VisionSetup) Name() string { return "vision.setup" }
 func (VisionSetup) Describe() Descriptor {
 	return Descriptor{
 		Name: "vision.setup",
-		Description: "Turn on (or off) automatic setup of the local vision model on this PC. With on=true, the agent downloads " +
+		Description: "Turn on (or off) automatic setup of the local vision model on this PC. It is ON by default on every " +
+			"Windows PC with an NVIDIA GPU (the model is required); on=false opts this PC out. With on=true, the agent downloads " +
 			"the model (and, on Windows, the llama.cpp CUDA runtime) by itself as soon as it has internet — resumably, in the " +
 			"background, retrying until done — then wires vision.serve automatically so vision.locate just works. The switch is " +
 			"remembered across restarts. Without arguments, reports the setup progress (download MB, phase, ready).",
