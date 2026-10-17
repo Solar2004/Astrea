@@ -53,6 +53,7 @@ type Provisioner struct {
 	phase   string // what it is doing now
 	errMsg  string
 	done    bool
+	curDL   string // download in progress, for Builtin's percent
 }
 
 func (p *Provisioner) logf(f string, a ...any) {
@@ -122,6 +123,43 @@ func (p *Provisioner) Status() map[string]any {
 		m["mmproj_mb"] = fi.Size() / (1 << 20)
 	}
 	return m
+}
+
+// Builtin reports the vision model as one of Astrea's own services.
+func (p *Provisioner) Builtin(ctx context.Context) Builtin {
+	b := Builtin{Name: "ui-tars", Title: "UI-TARS (vision model)", Required: true}
+	p.mu.Lock()
+	on, running, done, phase, errMsg, dl := p.on, p.running, p.done, p.phase, p.errMsg, p.curDL
+	p.mu.Unlock()
+	switch {
+	case done && p.Mgr.Running():
+		b.State = "running"
+	case done:
+		b.State = "ready"
+	case running && errMsg != "":
+		b.State, b.Error = "error", errMsg
+	case running:
+		b.State, b.Phase = "installing", phase
+	case !on && fileExists(p.modelPath()):
+		b.State = "paused" // started, then switched off
+	default:
+		b.State = "missing"
+	}
+	if b.State == "installing" && dl != "" {
+		if s, err := p.Dloads.Get(ctx, dl, 0); err == nil {
+			b.Bytes, b.Total, b.ETASec = s.Bytes, s.Total, s.ETASec
+			if s.Total > 0 {
+				pct := s.Percent
+				b.Percent = &pct
+			}
+		}
+	}
+	return b
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func (p *Provisioner) setPhase(ph string) {
@@ -245,6 +283,10 @@ func (p *Provisioner) fetch(ctx context.Context, url, dest string) error {
 	if err != nil {
 		return err
 	}
+	p.mu.Lock()
+	p.curDL = st.ID
+	p.mu.Unlock()
+	defer func() { p.mu.Lock(); p.curDL = ""; p.mu.Unlock() }()
 	for {
 		s, err := p.Dloads.Get(ctx, st.ID, 10*time.Second)
 		if err != nil {

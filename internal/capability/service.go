@@ -143,7 +143,29 @@ func (c ServiceStop) Invoke(_ context.Context, payload json.RawMessage, _ Emit) 
 }
 
 // ServiceStatus reports one or all services.
-type ServiceStatus struct{ Svcs *supervise.Services }
+type ServiceStatus struct {
+	Svcs *supervise.Services
+	// Builtin, if set, lists the services Astrea itself installs on every PC
+	// (the vision model…), so the panel shows them even before they exist.
+	Builtin func(context.Context) []Builtin
+}
+
+// Builtin is a service Astrea provides by itself. State is one of missing
+// (not there and nothing is fetching it), installing, paused (switched off
+// before it finished), error (installing, waiting to retry), ready
+// (installed, idle) or running.
+type Builtin struct {
+	Name     string   `json:"name"`
+	Title    string   `json:"title"`
+	Required bool     `json:"required"`
+	State    string   `json:"state"`
+	Phase    string   `json:"phase,omitempty"`   // what installing is doing now
+	Percent  *float64 `json:"percent,omitempty"` // of the current download
+	Bytes    int64    `json:"bytes,omitempty"`
+	Total    int64    `json:"total,omitempty"`
+	ETASec   float64  `json:"eta_sec,omitempty"`
+	Error    string   `json:"error,omitempty"`
+}
 
 func (ServiceStatus) Name() string { return "service.status" }
 
@@ -168,7 +190,11 @@ func (c ServiceStatus) Invoke(ctx context.Context, payload json.RawMessage, _ Em
 	if req.Name == "" {
 		list := c.Svcs.List()
 		withGPU(ctx, list)
-		return map[string]any{"services": list}, nil
+		res := map[string]any{"services": list}
+		if c.Builtin != nil {
+			res["builtin"] = c.Builtin(ctx)
+		}
+		return res, nil
 	}
 	st, err := c.Svcs.Status(req.Name)
 	if err != nil {

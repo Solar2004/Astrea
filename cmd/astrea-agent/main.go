@@ -318,7 +318,15 @@ func run() *log.Logger {
 	reg.Register(capability.JobCancel{Jobs: jobs})
 	reg.Register(capability.ServiceStart{Svcs: svcs, Dyn: dyn})
 	reg.Register(capability.ServiceStop{Svcs: svcs, Dyn: dyn})
-	reg.Register(capability.ServiceStatus{Svcs: svcs})
+	// Astrea's own services (vision model…), registered further down.
+	var builtins []func(context.Context) capability.Builtin
+	reg.Register(capability.ServiceStatus{Svcs: svcs, Builtin: func(ctx context.Context) []capability.Builtin {
+		out := make([]capability.Builtin, 0, len(builtins))
+		for _, f := range builtins {
+			out = append(out, f(ctx))
+		}
+		return out
+	}})
 	reg.Register(capability.ServiceLogs{Svcs: svcs})
 	go svcs.StartAll()
 	downloads := download.NewManager()
@@ -414,6 +422,7 @@ func run() *log.Logger {
 	capability.RegisterVision(reg, visionMgr, visionProv, func(ctx context.Context, method string, args json.RawMessage) (any, error) {
 		return checked(ctx, method, args, func(protocol.StreamChunk) {})
 	})
+	builtins = append(builtins, visionProv.Builtin)
 	go visionMgr.Loop(ctx) // auto-stop the model when idle; starts nothing by itself
 	visionProv.Load()      // resume auto-provisioning if it was switched on before
 	if cfg.Vision.AutoProvision {

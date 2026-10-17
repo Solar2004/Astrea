@@ -76,6 +76,13 @@ func (m *VisionManager) canServe() bool {
 	return len(m.cfg.Serve) > 0
 }
 
+// Running reports whether the model process Astrea started is alive.
+func (m *VisionManager) Running() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.running()
+}
+
 func (m *VisionManager) running() bool {
 	return m.cmd != nil && m.cmd.Process != nil && m.cmd.ProcessState == nil
 }

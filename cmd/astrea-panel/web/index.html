@@ -832,6 +832,19 @@ const SVC = {
   stopped: ["neutral", "Detenido"], exited: ["neutral", "Detenido"], failed: ["bad", "Falló"],
 };
 const svcState = st => SVC[st] || ["neutral", st || "Desconocido"];
+// Astrea's own services (service.status → builtin): required on every PC, shown even before they exist.
+// Agents that don't report them yet get these rows with state "unknown".
+const BUILTIN_REQUIRED = [{ name: "ui-tars", required: true, state: "unknown" }];
+const BUILTIN_TITLE = { "ui-tars": "UI-TARS · modelo de visión" };
+const BUILTIN = {
+  running: ["good", "Funcionando"], ready: ["good", "Instalado"], installing: ["warn", "Instalando"],
+  error: ["bad", "Reintentando"], paused: ["neutral", "En pausa"], missing: ["bad", "Falta"], unknown: ["neutral", "Sin datos"],
+};
+const PHASE = {
+  "downloading model": "Descargando el modelo", "downloading mmproj": "Descargando el proyector de visión",
+  "downloading llama.cpp (CUDA)": "Descargando llama.cpp (CUDA)", "unpacking llama.cpp": "Descomprimiendo llama.cpp",
+  "configuring": "Configurando",
+};
 function explain(err) {
   if (/unknown_method/.test(err)) return { title: "El agente de este equipo está desactualizado", body: "Reinstálalo o actualízalo para ver todos los datos." };
   if (/unauthorized|401/.test(err)) return { title: "La clave de acceso no coincide", body: "El token de este equipo en machines.json no es el que tiene el agente." };
@@ -1815,13 +1828,43 @@ function tabPerformance(key, s) {
                 : $("section", { class: "card" }, $("h3", {}, icon("gpu"), "Gráfica"), $("div", { class: "empty-sm" }, "No se detectó ninguna gráfica.")),
     diskCard(s));
 }
+function builtinMeta(b) {
+  if (b.state === "installing") return [PHASE[b.phase] || b.phase || "Preparando",
+    b.percent != null ? Math.round(b.percent) + " %" : null,
+    b.total ? `${bytes(b.bytes || 0)} de ${bytes(b.total)}` : null,
+    b.eta_sec > 0 ? "quedan " + dur(b.eta_sec * 1000) : null].filter(Boolean).join(" · ");
+  return {
+    running: "En marcha ahora mismo", ready: "Listo: arranca solo cuando la IA lo necesita",
+    error: b.error ? "Falló: " + b.error : "Falló; vuelve a intentarlo solo",
+    paused: "La instalación está apagada a medias (se reanuda con vision.setup)",
+    missing: "No está instalado en este equipo",
+    unknown: "El agente de este equipo no informa de esto. Actualízalo para verlo.",
+  }[b.state] || "";
+}
+function builtinSection(m) {
+  if (!m.online || !m.services) return null;
+  const list = m.services.builtin || BUILTIN_REQUIRED;
+  if (!list.length) return null;
+  const okN = list.filter(b => b.state === "ready" || b.state === "running").length;
+  return [$("h2", { class: "section" }, "Obligatorios de Astrea", $("span", { class: "count" }, `${okN}/${list.length}`)),
+    $("div", { class: "list svc" }, list.map(b => {
+      const [tone, label] = BUILTIN[b.state] || ["neutral", b.state || "Desconocido"];
+      return $("div", { class: "li" },
+        $("div", { class: "os-tile", style: "width:34px;height:34px;border-radius:9px" }, icon("eye")),
+        $("div", { style: "flex:1;min-width:0" }, $("div", { class: "nm" }, BUILTIN_TITLE[b.name] || b.title || b.name),
+          $("div", { class: "meta" }, builtinMeta(b)),
+          b.state === "installing" && b.percent != null ? meter(b.percent, { thin: true, label: "Progreso de la instalación" }) : null),
+        chip(tone, label));
+    }))];
+}
 function tabServices(m) {
+  const own = builtinSection(m);
   const list = services(m);
-  if (!list.length) return $("div", { class: "card empty" },
+  if (!list.length) return [own, own ? $("h2", { class: "section" }, "De tu IA") : null, $("div", { class: "card empty" },
     $("h2", {}, "Sin servicios"),
-    $("p", {}, "Aquí aparecerán los modelos y APIs que tu IA levante en este equipo (por ejemplo, un servidor de llama.cpp). Se reinician solos si fallan."));
+    $("p", {}, "Aquí aparecerán los modelos y APIs que tu IA levante en este equipo (por ejemplo, un servidor de llama.cpp). Se reinician solos si fallan."))];
   const base = m.base || "";
-  return [$("div", { class: "list svc" }, list.map(sv => {
+  return [own, own ? $("h2", { class: "section" }, "De tu IA", $("span", { class: "count" }, String(list.length))) : null, $("div", { class: "list svc" }, list.map(sv => {
     const [tone, label] = svcState(sv.state);
     const ep = sv.expose && sv.expose.endpoint;
     return $("div", { class: "li" },
