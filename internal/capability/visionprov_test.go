@@ -96,17 +96,22 @@ func TestVisionLocateSeesAutoConfig(t *testing.T) {
 	}
 }
 
-// Measured on f3-2 (2560×1440 screen, 1568×882 shot): UI-TARS answered y=877
-// for a taskbar icon whose centre is at screen y≈1405 (the 882-row image is
-// 896 rows for the model). x needs no correction: 1568 is a multiple of 28.
-func TestGrid28(t *testing.T) {
-	if grid28(882) != 896 || grid28(1568) != 1568 || grid28(5) != 28 {
-		t.Fatalf("grid28: %v %v %v", grid28(882), grid28(1568), grid28(5))
+// Measured on f3-2 (2560×1440, native shot): the server shrank it to
+// 2380×1344 and UI-TARS answered (1026,1318) for the Start button, whose
+// centre is at (1102,1416); (1524,745) for a tab centred at (1639,800).
+func TestQwenResizeMapsBack(t *testing.T) {
+	for _, c := range []struct{ w, h, rw, rh float64 }{
+		{2560, 1440, 2380, 1344}, {1568, 882, 1568, 896}, {640, 360, 1204, 672},
+	} {
+		if rw, rh := qwenResize(c.w, c.h); rw != c.rw || rh != c.rh {
+			t.Errorf("qwenResize(%v,%v) = %v×%v, want %v×%v", c.w, c.h, rw, rh, c.rw, c.rh)
+		}
 	}
-	scale := 0.6125
-	ih := 1440 * scale
-	y := math.Round(877 * ih / grid28(ih) / scale)
-	if y < 1395 || y > 1415 {
-		t.Fatalf("taskbar y = %v, want ≈1405", y)
+	rw, rh := qwenResize(2560, 1440)
+	for _, p := range []struct{ mx, my, x, y float64 }{{1026, 1318, 1102, 1416}, {1524, 745, 1639, 800}} {
+		x, y := p.mx*2560/rw, p.my*1440/rh
+		if math.Abs(x-p.x) > 10 || math.Abs(y-p.y) > 10 {
+			t.Errorf("model (%v,%v) → screen (%.0f,%.0f), want ≈(%v,%v)", p.mx, p.my, x, y, p.x, p.y)
+		}
 	}
 }

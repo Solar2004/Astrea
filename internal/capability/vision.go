@@ -91,8 +91,12 @@ func (VisionLocate) Describe() Descriptor {
 		Description: "Find something on screen by description, using the local vision model on this PC's GPU, and return its " +
 			"screen coordinates (x, y). Use it only when ui.snapshot (native apps) and browser.read (web) cannot see the " +
 			"target — a game, a canvas, a custom-drawn app. instruction is what to find, e.g. \"the red Submit button\". " +
-			"With click=true it also clicks there. The model is started on demand (and auto-stops when idle to free the " +
-			"GPU); the first call after a cold start waits for it to load, so it can take a minute.",
+			"With click=true it also clicks there. Describe the exact spot to click, not just the control: in File " +
+			"Explorer the address bar is a row of folder buttons (clicking one navigates), so ask for \"the empty space " +
+			"at the right end of the File Explorer address bar\" to type a path. Make sure the window is already on " +
+			"screen (a window still opening is not there yet), and check with a screenshot before typing after a click. " +
+			"The model is started on demand (and auto-stops when idle to free the GPU); the first call after a cold " +
+			"start waits for it to load, so it can take a minute.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -129,7 +133,10 @@ func (c VisionLocate) Invoke(ctx context.Context, payload json.RawMessage, _ Emi
 
 	// 1. Grab a screenshot through the normal capability (forwarded to the GUI
 	// helper on a headless agent, and auto-unlocked if the PC is locked).
-	shotRaw, err := c.Dispatch(ctx, "screen.capture", json.RawMessage(`{"max_width":1568,"format":"png"}`))
+	// Native resolution (up to 4K): the server shrinks it to its token budget
+	// itself, and we undo exactly that (qwenResize). Downscaling here first
+	// cost accuracy: 5/10 hits at 1568 px vs 9/10 native (bench on f3-2).
+	shotRaw, err := c.Dispatch(ctx, "screen.capture", json.RawMessage(`{"max_width":3840,"format":"png"}`))
 	if err != nil {
 		return nil, internal(fmt.Errorf("screenshot: %w", err))
 	}
@@ -155,11 +162,12 @@ func (c VisionLocate) Invoke(ctx context.Context, payload json.RawMessage, _ Emi
 	}
 	var x, y int
 	if c.coordsPixel() {
-		// Pixels of the image as the model saw it (resized to multiples of
-		// 28), back to our image, then screen = origin + px/scale.
+		// Pixels of the image as the model saw it (resized by the server, see
+		// qwenResize), back to our image, then screen = origin + px/scale.
 		iw := float64(shot.ScreenWidth) * scale
 		ih := float64(shot.ScreenHeight) * scale
-		mx, my = mx*iw/grid28(iw), my*ih/grid28(ih)
+		rw, rh := qwenResize(iw, ih)
+		mx, my = mx*iw/rw, my*ih/rh
 		x = shot.Origin.X + int(math.Round(mx/scale))
 		y = shot.Origin.Y + int(math.Round(my/scale))
 	} else {
@@ -184,11 +192,33 @@ func (c VisionLocate) Invoke(ctx context.Context, payload json.RawMessage, _ Emi
 	return res, nil
 }
 
-// grid28 is a side as Qwen2.5-VL (UI-TARS 1.5) resizes it: to the nearest
-// multiple of 28 (14 px patches merged 2×2). Answers in "pixel" mode are in
-// that resized image, e.g. 896 rows for an 882-row screenshot.
-func grid28(side float64) float64 {
-	return max(28, math.Round(side/28)*28)
+// VisionImageMaxTokens/MinTokens pin llama-server's image budget
+// (--image-max-tokens/--image-min-tokens, see autoConfigure) so qwenResize
+// knows exactly how the screenshot was resized. Below 1024 tokens Qwen-VL
+// grounding degrades (llama.cpp's own warning).
+const (
+	VisionImageMaxTokens = 4096
+	VisionImageMinTokens = 1024
+)
+
+// qwenResize is the size Qwen2.5-VL (UI-TARS 1.5) resizes an image to before
+// it answers in pixels of that resized image: sides rounded to multiples of
+// 28 (14 px patches merged 2×2), then scaled into [min, max] tokens of 28×28.
+// E.g. 2560×1440 → 2380×1344 (4096 tokens max), 1568×882 → 1568×896.
+func qwenResize(w, h float64) (float64, float64) {
+	const f = 28
+	maxPx := float64(VisionImageMaxTokens * f * f)
+	minPx := float64(VisionImageMinTokens * f * f)
+	rw, rh := max(f, math.Round(w/f)*f), max(f, math.Round(h/f)*f)
+	switch {
+	case rw*rh > maxPx:
+		beta := math.Sqrt(w * h / maxPx)
+		rw, rh = max(f, math.Floor(w/beta/f)*f), max(f, math.Floor(h/beta/f)*f)
+	case rw*rh < minPx:
+		beta := math.Sqrt(minPx / (w * h))
+		rw, rh = math.Ceil(w*beta/f)*f, math.Ceil(h*beta/f)*f
+	}
+	return rw, rh
 }
 
 type shotResult struct {
@@ -222,11 +252,12 @@ func asShot(v any) (shotResult, error) {
 // 384</point>') or click(start_box='(512,384)') — or a bare "512, 384".
 var coordRe = regexp.MustCompile(`-?\d+(?:\.\d+)?`)
 
-// groundingPrompt is UI-TARS's own action-only template (codes/ui_tars/prompt.py):
-// the model replies with just "Action: click(point='<point>x y</point>')".
+// groundingPrompt is UI-TARS's own grounding template, verbatim
+// (GROUNDING_DOUBAO in codes/ui_tars/prompt.py): the instruction goes in as is.
+// An extra "Locate: " prefix dropped the f3-2 bench from 9/10 to 8/10.
 const groundingPrompt = "You are a GUI agent. You are given a task and your action history, with screenshots. " +
-	"You need to perform the next action to complete the task.\n\n## Output Format\nAction: ...\n\n" +
-	"## Action Space\nclick(point='<point>x1 y1</point>')\n\n## User Instruction\nLocate: %s"
+	"You need to perform the next action to complete the task. \n\n## Output Format\n\nAction: ...\n\n\n" +
+	"## Action Space\nclick(point='<point>x1 y1</point>'')\n\n## User Instruction\n%s"
 
 func (c VisionLocate) query(ctx context.Context, instruction, mime, b64 string) (float64, float64, error) {
 	cfg := c.cfg()
@@ -238,11 +269,12 @@ func (c VisionLocate) query(ctx context.Context, instruction, mime, b64 string) 
 		"max_tokens":  64,
 		"messages": []map[string]any{{
 			"role": "user",
+			// Image first, as UI-TARS was trained (text first: 7/10 vs 9/10).
 			"content": []map[string]any{
-				{"type": "text", "text": prompt},
 				{"type": "image_url", "image_url": map[string]string{
 					"url": "data:" + mime + ";base64," + b64,
 				}},
+				{"type": "text", "text": prompt},
 			},
 		}},
 	}

@@ -58,7 +58,10 @@ func (m *VisionManager) autoConfigure(dir, llamaServer string) {
 			// --fit puts as many layers on the GPU as fit (all of them on 16 GB,
 			// part on a 4 GB laptop) instead of failing; a fixed context keeps
 			// --fit from spending VRAM on a 128k KV cache screenshots never need.
-			"--fit", "on", "-c", "8192", "--host", "127.0.0.1", "--port", "8100"}
+			"--fit", "on", "-c", "8192",
+			"--image-min-tokens", strconv.Itoa(VisionImageMinTokens),
+			"--image-max-tokens", strconv.Itoa(VisionImageMaxTokens),
+			"--host", "127.0.0.1", "--port", "8100"}
 	}
 	if m.cfg.Endpoint == "" {
 		m.cfg.Endpoint = "http://127.0.0.1:8100/v1/chat/completions"

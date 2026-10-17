@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Solar2004/Astrea/internal/procutil"
 )
 
 func init() { ui = &winUI{} }
@@ -91,13 +93,18 @@ foreach ($e in $els) {
     $n++
   } catch {}
 }
-$out | ConvertTo-Json -Depth 3 -Compress
+# Pure ASCII out (\uXXXX for the rest): through the console code page a ” in
+# a title became a bare " (best-fit) and broke the JSON, and accents came out
+# as garbage. Escaped, the code page cannot touch them.
+$json=$out | ConvertTo-Json -Depth 3 -Compress
+[regex]::Replace($json,'[^\x00-\x7F]',{param($m) '\u{0:x4}' -f [int][char]$m.Value})
 `
 
 func (u *winUI) Snapshot(window string) (string, []UIElement, error) {
 	window = strings.ReplaceAll(window, "'", "''")
 	script := fmt.Sprintf(psSnapshot, window)
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-STA", "-Command", script)
+	procutil.NoConsole(cmd) // runs in the user's desktop: no console flashing on their screen
 	// UIA on a big tree can be slow; keep it under the hub's call timeout.
 	done := make(chan struct{})
 	var out []byte
