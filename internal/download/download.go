@@ -48,6 +48,9 @@ type Request struct {
 	SHA256    string            `json:"sha256,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
 	Overwrite bool              `json:"overwrite,omitempty"`
+	// Attempts bounds the tries on transient errors (0 = 5). A caller with
+	// other sources to fall back on uses fewer, to move on sooner.
+	Attempts int `json:"attempts,omitempty"`
 }
 
 // Status is a download's progress.
@@ -221,9 +224,13 @@ func (m *Manager) fetch(ctx context.Context, d *dl, u string, req Request) error
 	dest := req.Dest
 	var err error
 	delay := 2 * time.Second
+	attempts := req.Attempts
+	if attempts <= 0 {
+		attempts = 5
+	}
 	for attempt := 1; ; attempt++ {
 		dest, err = m.attempt(ctx, d, u, req, dest)
-		if err == nil || ctx.Err() != nil || attempt == 5 || isPermanent(err) {
+		if err == nil || ctx.Err() != nil || attempt >= attempts || isPermanent(err) {
 			return err
 		}
 		select {
@@ -261,7 +268,7 @@ func (m *Manager) attempt(ctx context.Context, d *dl, u string, req Request, des
 	var part string
 	var have int64
 	if !isDir {
-		if done, err := m.alreadyThere(d, dest, req); done || err != nil {
+		if done, err := m.alreadyThere(ctx, d, dest, req); done || err != nil {
 			return dest, err
 		}
 		part = dest + ".part"
@@ -281,7 +288,7 @@ func (m *Manager) attempt(ctx context.Context, d *dl, u string, req Request, des
 	case resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && have > 0:
 		// The .part already holds everything.
 		d.bytes.Store(have)
-		return dest, m.finish(d, part, dest, req)
+		return dest, m.finish(ctx, d, part, dest, req)
 	case resp.StatusCode == http.StatusPartialContent && have > 0:
 		d.set(func(s *Status) { s.Resumed = true })
 	case resp.StatusCode == http.StatusOK:
@@ -297,7 +304,7 @@ func (m *Manager) attempt(ctx context.Context, d *dl, u string, req Request, des
 	if isDir {
 		dest = filepath.Join(dest, fileName(resp))
 		d.set(func(s *Status) { s.Dest = dest })
-		if done, err := m.alreadyThere(d, dest, req); done || err != nil {
+		if done, err := m.alreadyThere(ctx, d, dest, req); done || err != nil {
 			return dest, err
 		}
 		part = dest + ".part"
@@ -342,19 +349,19 @@ func (m *Manager) attempt(ctx context.Context, d *dl, u string, req Request, des
 	if total > 0 && d.bytes.Load() != total {
 		return dest, fmt.Errorf("connection closed early (%d of %d bytes)", d.bytes.Load(), total)
 	}
-	return dest, m.finish(d, part, dest, req)
+	return dest, m.finish(ctx, d, part, dest, req)
 }
 
 // alreadyThere skips the download when dest exists, unless overwrite. With a
 // sha256 the existing file must match to count.
-func (m *Manager) alreadyThere(d *dl, dest string, req Request) (bool, error) {
+func (m *Manager) alreadyThere(ctx context.Context, d *dl, dest string, req Request) (bool, error) {
 	fi, err := os.Stat(dest)
 	if err != nil || fi.IsDir() || req.Overwrite {
 		return false, nil
 	}
 	if req.SHA256 != "" {
 		d.set(func(s *Status) { s.State = Verifying })
-		sum, err := hashFile(dest)
+		sum, err := hashFile(ctx, dest)
 		d.set(func(s *Status) { s.State = Running })
 		if err != nil || sum != req.SHA256 {
 			return false, nil
@@ -367,10 +374,10 @@ func (m *Manager) alreadyThere(d *dl, dest string, req Request) (bool, error) {
 }
 
 // finish verifies the .part and moves it into place.
-func (m *Manager) finish(d *dl, part, dest string, req Request) error {
+func (m *Manager) finish(ctx context.Context, d *dl, part, dest string, req Request) error {
 	if req.SHA256 != "" {
 		d.set(func(s *Status) { s.State = Verifying })
-		sum, err := hashFile(part)
+		sum, err := hashFile(ctx, part)
 		if err != nil {
 			return permanentError{err}
 		}
@@ -391,15 +398,28 @@ func (m *Manager) finish(d *dl, part, dest string, req Request) error {
 	return nil
 }
 
-func hashFile(p string) (string, error) {
+// hashFile stops when ctx is done: hashing 20 GB takes a minute or two and
+// Cancel waits for it.
+func hashFile(ctx context.Context, p string) (string, error) {
 	f, err := os.Open(p)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	buf := make([]byte, 1<<20)
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, err := f.Read(buf)
+		h.Write(buf[:n])
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
