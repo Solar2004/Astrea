@@ -27,7 +27,10 @@ type Server struct {
 	// Work, if set, resolves the task a request declares (Frame.Work).
 	Work *work.Store
 	// Dyn, if set, serves dynamic endpoints mounted under /dyn/.
-	Dyn    http.Handler
+	Dyn http.Handler
+	// Files, if set, serves recipe artifacts under /files/ to other
+	// machines (with this agent's token).
+	Files  http.Handler
 	Logger *log.Logger
 }
 
@@ -41,6 +44,15 @@ func (s *Server) Handler() http.Handler {
 		// Dynamic endpoints are reachable over the tailnet without the control
 		// token so Hermes-built APIs can be consumed by local tools.
 		mux.Handle("/dyn/", s.Dyn)
+	}
+	if s.Files != nil {
+		mux.HandleFunc("/files/", func(w http.ResponseWriter, r *http.Request) {
+			if !s.Auth.Check(r) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			s.Files.ServeHTTP(w, r)
+		})
 	}
 	return mux
 }
@@ -66,6 +78,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.CloseNow()
+	// The library default is 32 KiB: any bigger request (fs.write of a
+	// binary, recipe.apply with a large recipe) dropped the connection.
+	c.SetReadLimit(64 << 20)
 	// No read deadline: this is a long-lived control channel.
 	conn := &conn{ws: c, srv: s, ctx: r.Context(), inflight: map[string]context.CancelFunc{}}
 	conn.serve()

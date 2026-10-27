@@ -33,6 +33,7 @@ import (
 	"github.com/Solar2004/Astrea/internal/memory"
 	"github.com/Solar2004/Astrea/internal/power"
 	"github.com/Solar2004/Astrea/internal/protocol"
+	"github.com/Solar2004/Astrea/internal/recipe"
 	"github.com/Solar2004/Astrea/internal/schedule"
 	"github.com/Solar2004/Astrea/internal/security"
 	"github.com/Solar2004/Astrea/internal/supervise"
@@ -338,6 +339,35 @@ func run() *log.Logger {
 	reg.Register(capability.NetDownload{Mgr: downloads})
 	reg.Register(capability.NetDownloadStatus{Mgr: downloads})
 	reg.Register(capability.NetDownloadCancel{Mgr: downloads})
+	// Service recipes: install a whole service (artifacts, config, setup,
+	// services, endpoints) from a recipe; other machines copy the artifacts
+	// from /files/.
+	installedFn := filepath.Join(cfg.DataDir, "installed.json")
+	recipes, err := recipe.OpenStore(installedFn)
+	if err != nil {
+		// Keep the broken file for a look and start empty: the next apply
+		// adopts what is on disk without downloading it again.
+		logger.Printf("recipes: %s unreadable (%v); moved to .bad, starting empty", installedFn, err)
+		os.Rename(installedFn, installedFn+".bad")
+		if recipes, err = recipe.OpenStore(installedFn); err != nil {
+			// Still unreadable (the rename failed: locked on Windows). Run
+			// with an empty store that is not saved rather than crash.
+			logger.Printf("recipes: %v; recipes are not saved until the agent restarts", err)
+			recipes, _ = recipe.OpenStore("")
+		}
+	}
+	installer := &recipe.Installer{
+		Env:   &capability.RecipeEnv{Dloads: downloads, Svcs: svcs, Dyn: dyn},
+		Store: recipes, Data: cfg.DataDir,
+	}
+	reg.Register(capability.RecipeApply{In: installer})
+	reg.Register(capability.RecipePlan{In: installer})
+	reg.Register(capability.RecipeStatus{In: installer})
+	reg.Register(capability.RecipeCancel{In: installer})
+	reg.Register(capability.RecipeRemove{In: installer})
+	if resumed := installer.Resume(); len(resumed) > 0 {
+		logger.Printf("recipes: resuming interrupted installs: %v", resumed)
+	}
 	// Power: keep the PC awake while it serves or downloads (auto), detect a present user.
 	// working: a job or download in flight (a restart would lose it).
 	working := func() bool {
@@ -478,7 +508,7 @@ func run() *log.Logger {
 		logger.Println("WARNING: no token set — control channel is UNAUTHENTICATED. Set a token in config or --token.")
 	}
 
-	srv := &transport.Server{Registry: reg, Auth: tok, Guard: guard, Audit: audit, Work: works, Dyn: dyn, Logger: logger}
+	srv := &transport.Server{Registry: reg, Auth: tok, Guard: guard, Audit: audit, Work: works, Dyn: dyn, Files: &recipe.Files{Store: recipes, Data: cfg.DataDir}, Logger: logger}
 	httpSrv := &http.Server{Addr: cfg.Addr, Handler: srv.Handler()}
 
 	go func() {

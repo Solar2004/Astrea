@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -339,14 +340,23 @@ func (p *Provisioner) fetch(ctx context.Context, url, dest string) error {
 }
 
 // unzip extracts a zip into dir (flattening nothing; keeps entry paths).
+// Entries that would land outside dir (../, absolute, drive or stream names)
+// fail the whole extraction: recipes unzip archives from the internet.
 func unzip(src, dir string) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+	base := filepath.Clean(dir) + string(filepath.Separator)
 	for _, f := range r.File {
+		if strings.ContainsAny(f.Name, `\:`) {
+			return fmt.Errorf("zip entry %q: unsafe name", f.Name)
+		}
 		fp := filepath.Join(dir, f.Name)
+		if !strings.HasPrefix(fp+string(filepath.Separator), base) {
+			return fmt.Errorf("zip entry %q: outside the destination", f.Name)
+		}
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(fp, 0o755)
 			continue

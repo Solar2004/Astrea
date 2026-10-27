@@ -1,0 +1,83 @@
+{
+  "schema": "astrea.recipe/v1",
+  "name": "ui-tars",
+  "version": "0.1.0",
+  "title": "UI-TARS · modelo de visión",
+  "description": "UI-TARS 1.5 7B (GGUF Q4_K_M) servido por llama.cpp CUDA. Lo usa vision.locate. Sale de internal/capability/visionprov.go y visionmgr.go.",
+  "requires": {
+    "os": "windows",
+    "gpu": "nvidia"
+  },
+  "root": "${data}\\vision",
+  "artifacts": [
+    {
+      "id": "model",
+      "path": "model.gguf",
+      "size": 4683073856,
+      "sha256": "3233f143243135ef458a3e18894c4d6883d384abcef23367a538a3a78003009b",
+      "urls": [
+        "hf://mradermacher/UI-TARS-1.5-7B-GGUF/UI-TARS-1.5-7B.Q4_K_M.gguf"
+      ]
+    },
+    {
+      "id": "mmproj",
+      "path": "mmproj.gguf",
+      "size": 856130240,
+      "sha256": "31492401b0da4d2fc68e353c66bdcf3837818c68abb5265207ec1923abf738d3",
+      "urls": [
+        "hf://mradermacher/UI-TARS-1.5-7B-GGUF/UI-TARS-1.5-7B.mmproj-Q8_0.gguf"
+      ]
+    },
+    {
+      "id": "llama",
+      "path": "llama.zip",
+      "size": 266609546,
+      "urls": [
+        "https://github.com/ggml-org/llama.cpp/releases/download/b11683/llama-b11683-bin-win-cuda-12.4-x64.zip"
+      ],
+      "unpack": {
+        "to": "llama",
+        "creates": "llama/llama-server.exe"
+      }
+    },
+    {
+      "id": "cudart",
+      "path": "cudart.zip",
+      "size": 391443627,
+      "urls": [
+        "https://github.com/ggml-org/llama.cpp/releases/download/b11683/cudart-llama-bin-win-cuda-12.4-x64.zip"
+      ],
+      "unpack": {
+        "to": "llama",
+        "creates": "llama/cudart64_12.dll"
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "ui-tars",
+      "command": "${root}\\llama\\llama-server.exe -m ${root}\\model.gguf --mmproj ${root}\\mmproj.gguf --fit on -c 8192 --image-min-tokens 1024 --image-max-tokens 4096 --host 127.0.0.1 --port 8100",
+      "on_demand": {
+        "idle_stop_sec": 300
+      },
+      "ready": {
+        "url": "http://127.0.0.1:8100/v1/models"
+      },
+      "expose": {
+        "endpoint": "ui-tars",
+        "port": 8100,
+        "api": "openai",
+        "auth": "key"
+      }
+    }
+  ],
+  "resources": {
+    "gpu_mb": 5500,
+    "gpu_exclusive": false
+  },
+  "global": true,
+  "notes": [
+    "on_demand: no arranca solo; lo levanta vision.locate y se para tras 300 s sin uso (lo que hoy hace VisionManager). Es un campo nuevo que la receta necesita para este caso.",
+    "Hoy no se publica como endpoint; expose es nuevo y opcional."
+  ]
+}

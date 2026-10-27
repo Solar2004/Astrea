@@ -143,3 +143,21 @@ func TestBadTokenRejected(t *testing.T) {
 		t.Fatal("dial with a wrong token should fail")
 	}
 }
+
+// Requests over the library's 32 KiB default (fs.write of a binary, a big
+// recipe) used to drop the connection.
+func TestLargeRequest(t *testing.T) {
+	url, stop := startAgent(t, fakeCap{"big", func(context.Context, capability.Emit) (any, error) {
+		return "ok", nil
+	}})
+	defer stop()
+	c, err := Dial(context.Background(), url, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	res, err := c.Call(context.Background(), "big", map[string]any{"data": strings.Repeat("x", 3<<20)})
+	if err != nil || string(res.Result) != `"ok"` {
+		t.Fatalf("got %v, %v", res, err)
+	}
+}
