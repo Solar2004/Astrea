@@ -127,6 +127,7 @@ func main() {
 	mux.HandleFunc("/api/version", p.handleVersion)
 	mux.HandleFunc("/api/update", p.handleUpdate)
 	mux.HandleFunc("/api/lock", p.handleLock)
+	mux.HandleFunc("/api/power", p.handlePower)
 	mux.HandleFunc("/api/history", p.handleHistory)
 	mux.HandleFunc("/api/machines", p.handleMachines)
 	mux.HandleFunc("/api/audit", p.handleAudit)

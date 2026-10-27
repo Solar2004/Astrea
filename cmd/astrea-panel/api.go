@@ -93,6 +93,31 @@ func (p *panel) handleLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "locked": res.Locked})
 }
 
+// handlePower: POST /api/power?machine=&action=reboot|cancel → reinicia el equipo
+// (o anula un reinicio pendiente). Solo esas dos: apagar o suspender lo dejaría
+// fuera de alcance hasta que alguien lo despierte.
+func (p *panel) handlePower(w http.ResponseWriter, r *http.Request) {
+	if !mutating(w, r, http.MethodPost) {
+		return
+	}
+	q := r.URL.Query()
+	action := q.Get("action")
+	if action != "reboot" && action != "cancel" {
+		fail(w, http.StatusBadRequest, errors.New("action debe ser reboot o cancel"))
+		return
+	}
+	args := map[string]any{"action": action}
+	if action == "reboot" {
+		args["delay_sec"] = 5
+	}
+	if code, err := p.call(r.Context(), q.Get("machine"), "power.action", args, nil, 15*time.Second); err != nil {
+		fail(w, code, err)
+		return
+	}
+	p.logger.Printf("power %s: %s (desde el panel)", q.Get("machine"), action)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": action})
+}
+
 // handleAudit: GET /api/audit?machine=&limit=100 → recent activity.
 func (p *panel) handleAudit(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

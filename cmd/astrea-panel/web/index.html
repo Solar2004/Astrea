@@ -113,6 +113,30 @@
   .nav-item .end { margin-left: auto; font-size: 12px; color: var(--text-3); }
   .sidebar .foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--divider); font-size: 12px; color: var(--text-3); display: grid; gap: 4px; }
   .sidebar .foot .row { display: flex; align-items: center; gap: 6px; }
+  .sidebar .fold { margin-left: auto; padding: 4px; border-radius: 6px; color: var(--text-3); background: none; border: 0; cursor: pointer; display: grid; place-items: center; }
+  .sidebar .fold:hover { background: var(--surface-3); color: var(--text); }
+  .sidebar .fold .icon { width: 16px; height: 16px; transform: rotate(180deg); }
+  .app.rail .sidebar .fold .icon { transform: none; }
+  /* machines: one line each (name · state · CPU) so a dozen fit without scrolling */
+  #navMachines .nav-item { min-height: 30px; padding: 4px 10px; gap: 8px; font-size: 13px; }
+  #navMachines .nav-item b { font-weight: 550; white-space: nowrap; flex: none; }
+  #navMachines .nav-item small { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* folded sidebar: a thin rail of icons; machines become small name chips */
+  @media (min-width: 861px) {
+    .app.rail { --sidebar-w: 72px; }
+    .app.rail .sidebar { padding: 14px 8px 10px; }
+    .app.rail .brand { justify-content: center; padding: 4px 0 14px; font-size: 0; gap: 0; }
+    .app.rail .sidebar > .nav-item { justify-content: center; padding: 6px 0; position: relative; }
+    .app.rail .sidebar > .nav-item .lbl, .app.rail .sidebar > .nav-item .end:empty { display: none; }
+    .app.rail .sidebar > .nav-item .end, .app.rail .sidebar > .nav-item .badge { position: absolute; top: 1px; right: 6px; margin: 0; font-size: 10px; }
+    .app.rail .sidebar > .nav-item .end:not(:empty) { background: var(--surface-3); border-radius: 999px; padding: 0 5px; line-height: 16px; }
+    .app.rail .nav-label { font-size: 0; padding: 8px 0 4px; border-top: 1px solid var(--divider); margin: 6px 4px 0; }
+    .app.rail #navMachines .nav-item { flex-direction: column; justify-content: center; gap: 2px; min-height: 36px; padding: 3px 0; font-size: 11.5px; }
+    .app.rail #navMachines .nav-item small, .app.rail #navMachines .nav-item .end { display: none; }
+    .app.rail .sidebar .foot { padding: 8px 0 0; justify-items: center; }
+    .app.rail .sidebar .foot .row:not(.keep) { display: none; }
+    .app.rail .sidebar .fold { margin: 0; }
+  }
 
   .main { min-width: 0; }
   .topbar, .scrim { display: none; }
@@ -492,6 +516,17 @@
   .tile .cap { display: flex; align-items: center; gap: 8px; padding: 9px 12px; min-width: 0; font-size: 13px; }
   .tile .cap b { font-weight: 650; white-space: nowrap; }
   .tile .cap small { color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; text-align: right; }
+  /* compact wall (S and "Todas"): name over the picture, tight gaps; "Todas" also fits every screen in the window */
+  .wall.compact { gap: 8px; }
+  .wall.compact .tile { border-radius: 10px; }
+  .wall.compact .tile:hover { transform: none; }
+  .wall.compact .tile .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 9px 6px; font-size: 12px; color: #fff;
+                             background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, .78)); pointer-events: none; }
+  .wall.compact .tile .cap small { color: rgba(255, 255, 255, .72); font-size: 11px; }
+  .wall.compact .thumb .over { left: 6px; top: 6px; }
+  .wall.compact .thumb .over .chip { font-size: 10.5px; padding: 1px 6px; }
+  .wall.fit { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+  .view.wide { max-width: none; padding-left: 24px; padding-right: 24px; }
   .tile.pick .thumb { opacity: .55; }
   .tile.pick.picked { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
   .tile.pick.picked .thumb { opacity: 1; }
@@ -602,15 +637,15 @@
 <div class="app" id="app">
   <aside class="sidebar" id="sidebar" aria-label="Navegación">
     <a class="brand" href="#/"><img src="favicon.svg" alt="">Astrea</a>
-    <a class="nav-item" href="#/" data-route="overview"><svg class="icon"><use href="#i-grid"/></svg>Resumen</a>
-    <a class="nav-item" href="#/tareas" data-route="tasks"><svg class="icon"><use href="#i-tasks"/></svg>Tareas<span class="end tnum" id="navTasks"></span></a>
-    <a class="nav-item" href="#/avisos" data-route="events"><svg class="icon"><use href="#i-bell"/></svg>Avisos<span id="navEvents"></span></a>
-    <a class="nav-item" href="#/visual" data-route="visual"><svg class="icon"><use href="#i-wall"/></svg>Visualización</a>
-    <a class="nav-item" href="#/encendido" data-route="uptime"><svg class="icon"><use href="#i-power"/></svg>Encendido</a>
+    <a class="nav-item" href="#/" data-route="overview" title="Resumen"><svg class="icon"><use href="#i-grid"/></svg><span class="lbl">Resumen</span></a>
+    <a class="nav-item" href="#/tareas" data-route="tasks" title="Tareas"><svg class="icon"><use href="#i-tasks"/></svg><span class="lbl">Tareas</span><span class="end tnum" id="navTasks"></span></a>
+    <a class="nav-item" href="#/avisos" data-route="events" title="Avisos"><svg class="icon"><use href="#i-bell"/></svg><span class="lbl">Avisos</span><span id="navEvents"></span></a>
+    <a class="nav-item" href="#/visual" data-route="visual" title="Visualización"><svg class="icon"><use href="#i-wall"/></svg><span class="lbl">Visualización</span></a>
+    <a class="nav-item" href="#/encendido" data-route="uptime" title="Encendido"><svg class="icon"><use href="#i-power"/></svg><span class="lbl">Encendido</span></a>
     <div class="nav-label">Equipos</div>
     <nav id="navMachines"></nav>
     <div class="nav-label">Ayuda</div>
-    <a class="nav-item" href="#/ayuda" data-route="help"><svg class="icon"><use href="#i-plus"/></svg>Añadir un equipo</a>
+    <a class="nav-item" href="#/ayuda" data-route="help" title="Añadir un equipo"><svg class="icon"><use href="#i-plus"/></svg><span class="lbl">Añadir un equipo</span></a>
     <div class="foot" id="sideFoot"></div>
   </aside>
   <div class="scrim" id="scrim"></div>
@@ -997,6 +1032,12 @@ function setLock(key, locked) {
     const m = machineOf(key);
     if (m) m.admin = { ...(m.admin || {}), locked: j.locked };
     toast(j.locked ? `Freno activado: ${key} rechazará cualquier orden de la IA.` : `Freno desactivado: la IA vuelve a poder usar ${key}.`, j.locked ? "bad" : "good");
+  });
+}
+function reboot(key) {
+  return act("reboot:" + key, async () => {
+    await api("POST", "/api/power?" + q({ machine: key, action: "reboot" }));
+    toast(`${key} se reinicia en 5 s. Volverá en línea en uno o dos minutos.`);
   });
 }
 function serviceAction(key, name, action) {
@@ -1434,16 +1475,21 @@ function drawSidebar() {
   nav.replaceChildren(...(list.length ? list.map((m, idx) => {
     const key = keyOf(m, idx), s = m.stats || lastGood.get(key), p = presence(m, key);
     const cur = r.name === "machine" && r.id === key;
-    return $("a", { class: "nav-item", href: machineHref(key), "aria-current": cur ? "page" : null },
+    return $("a", { class: "nav-item", href: machineHref(key), "aria-current": cur ? "page" : null,
+      title: titleOf(m, idx, s) + " · " + p.label },
       $("span", { class: "dot t-" + p.tone, "aria-hidden": "true" }),
-      $("span", { class: "two" }, $("b", {}, titleOf(m, idx, s)), $("small", {}, p.label)),
+      $("b", {}, titleOf(m, idx, s)), $("small", {}, p.label),
       m.online && m.stats ? $("span", { class: "end tnum", title: "Uso de CPU" }, pct(m.stats.cpu?.usage_percent)) : null);
   }) : [$("div", { class: "empty-sm", style: "padding:4px 10px" }, S.list ? "Ningún equipo todavía" : "Cargando…")]));
 
-  const v = S.version;
+  const v = S.version, rail = !!S.ui.rail;
+  document.getElementById("app").classList.toggle("rail", rail);
+  const fold = $("button", { class: "fold", title: rail ? "Expandir menú" : "Contraer menú", "aria-label": rail ? "Expandir menú" : "Contraer menú",
+                             onclick: () => { S.ui.rail = !rail; saveUI(); draw(); } }, icon("chev"));
   document.getElementById("sideFoot").replaceChildren(...[
     $("div", { class: "row" }, $("span", { class: "dot t-" + (S.ok ? "good" : "bad") }),
-      S.ok ? (S.updatedAt ? "Actualizado " + hhmmss(S.updatedAt) : "Conectando…") : "El panel no responde"),
+      S.ok ? (S.updatedAt ? "Actualizado " + hhmmss(S.updatedAt) : "Conectando…") : "El panel no responde", rail ? null : fold),
+    rail ? $("div", { class: "row keep" }, fold) : null,
     v?.panel ? $("div", { class: "row" }, "Astrea " + v.panel,
       v.update_available ? $("a", { href: "#/", style: "margin-left:auto" }, v.latest + " disponible") : null) : null].filter(Boolean));
 }
@@ -1490,8 +1536,12 @@ function eachHourOn(rep, from, cb) {
     const b = sp.end_kind === "running" ? Date.now() : Date.parse(sp.end);
     while (a < b) {
       const h = new Date(a); h.setMinutes(0, 0, 0);
-      const next = Math.min(b, h.getTime() + 36e5);
-      cb(h.getTime(), next - a, sp);
+      // In the hour repeated when DST ends, setMinutes lands on its first occurrence,
+      // an hour behind `a`; without this step the loop never advances and hangs the page.
+      let hs = h.getTime();
+      while (hs + 36e5 <= a) hs += 36e5;
+      const next = Math.min(b, hs + 36e5);
+      cb(hs, next - a, sp);
       a = next;
     }
   }
@@ -1731,7 +1781,8 @@ function viewVisual(list) {
   const on = pool.filter(e => e.m.online), off = pool.filter(e => !e.m.online);
   const set = (k, v) => { w[k] = v; saveUI(); draw(); };
   const pick = name => { w.selected = w.selected.includes(name) ? w.selected.filter(n => n !== name) : [...w.selected, name]; saveUI(); draw(); };
-  const every = { s: 6000, m: 5000, l: 4000 }[w.size] || 5000, width = { s: 480, m: 640, l: 960 }[w.size] || 640;
+  const every = { fit: 6000, s: 6000, m: 5000, l: 4000 }[w.size] || 5000, width = { fit: 480, s: 480, m: 640, l: 960 }[w.size] || 640;
+  const fit = w.size === "fit", compact = fit || w.size === "s";
 
   const tile = e => {
     const m = e.m, key = keyOf(m, e.idx), p = presence(m, key), title = titleOf(m, e.idx, m.stats);
@@ -1764,14 +1815,35 @@ function viewVisual(list) {
       $("span", { class: "spacer" }),
       $("span", { class: "muted" }, on.length ? `Se refresca cada ${every / 1000} s` : ""),
       $("div", { class: "segmented sm", role: "tablist", "aria-label": "Tamaño" },
-        [["s", "S"], ["m", "M"], ["l", "L"]].map(([k, l]) => $("button", { role: "tab", "aria-selected": String(w.size === k), onclick: () => set("size", k), title: "Tamaño " + l }, l)))),
+        [["fit", "Todas", "Todas las pantallas caben en la ventana"], ["s", "S"], ["m", "M"], ["l", "L"]].map(([k, l, t]) =>
+          $("button", { role: "tab", "aria-selected": String(w.size === k), onclick: () => set("size", k), title: t || "Tamaño " + l }, l)))),
     S.wallPick ? $("div", { class: "callout sm t-primary", style: "margin:0 0 14px" }, icon("info"),
       $("div", {}, $("p", {}, "Toca las pantallas que quieras ver juntas y pulsa Listo. Luego elige «Mi selección» arriba."))) : null,
-    on.length ? $("div", { class: "wall", style: "--tile:" + (TILE[w.size] || TILE.m) }, on.map(tile))
+    on.length ? fitWall($("div", { class: "wall" + (compact ? " compact" : "") + (fit ? " fit" : ""),
+                                   style: fit ? "--cols:" + (S.wallCols || 4) : "--tile:" + (TILE[w.size] || TILE.m) }, on.map(tile)), fit, on.length)
       : $("div", { class: "card empty" }, $("h2", {}, pool.length ? "Ninguno en línea" : "Nada que mostrar"),
           $("p", {}, pool.length ? "Los equipos de esta vista están apagados o sin conexión." : w.filter === "@sel" ? "Aún no has elegido equipos: pulsa «Elegir equipos»." : "Este grupo no tiene equipos.")),
     offlineSection(off)];
 }
+
+// "Todas": the fewest columns (so the biggest screens) at which every screen
+// fits in the window without scrolling.
+function fitWall(el, fit, n) {
+  if (!fit) return el;
+  requestAnimationFrame(() => {
+    if (!el.isConnected) return;
+    const gap = 8, W = el.clientWidth, H = window.innerHeight - el.getBoundingClientRect().top - 16;
+    let cols = n;
+    for (let c = 1; c <= n; c++) {
+      const rows = Math.ceil(n / c), tw = (W - (c - 1) * gap) / c;
+      if (rows * tw * 9 / 16 + (rows - 1) * gap <= H) { cols = c; break; }
+    }
+    if (cols !== S.wallCols) { S.wallCols = cols; el.style.setProperty("--cols", cols); }
+  });
+  return el;
+}
+let resizeTimer = 0;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (route().name === "visual") draw(); }, 150); });
 
 /* machine detail */
 function cpuCard(key, s) {
@@ -2269,6 +2341,7 @@ function viewMachine(list, id) {
       $("div", { class: "actions" },
         needsUpdate(m) ? confirmable("update:" + key, { label: "Actualizar agente", confirm: "Sí, actualizar", icon: "up", run: () => updateAgent(key) }) : null,
         m.online && !m.admin?.locked ? confirmable("lock:" + key, { label: "Frenar IA", confirm: "Sí, frenar", icon: "lock", cls: "danger", run: () => setLock(key, true) }) : null,
+        m.online ? confirmable("reboot:" + key, { label: "Reiniciar", confirm: "Sí, reiniciar", icon: "refresh", cls: "danger", run: () => reboot(key) }) : null,
         m.online ? $("button", { class: "btn primary", onclick: () => showShot(m.name || "", title) }, icon("desktop"), "Ver pantalla") : null))];
 
   const err = !m.online ? explain(m.error || "") : null;
@@ -2376,6 +2449,7 @@ function draw() {
     content = [$("div", { class: "callout t-bad" }, icon("alert"), $("div", {}, $("b", {}, "Esta vista ha fallado"),
       $("p", {}, "Es un fallo del panel, no del equipo. Detalle: " + e.message)))];
   }
+  view.classList.toggle("wide", r.name === "visual" && S.ui.wall.size === "fit");
   view.replaceChildren(...[content].flat(Infinity).filter(Boolean));
   document.title = r.name === "machine" ? r.id + " — Astrea" : r.name === "help" ? "Añadir un equipo — Astrea"
     : r.name === "tasks" ? "Tareas — Astrea" : r.name === "events" ? "Avisos — Astrea" : r.name === "visual" ? "Visualización — Astrea" : r.name === "uptime" ? "Encendido — Astrea" : r.name === "task" ? (S.cache["/api/work?" + q({ machine: r.machine, id: r.id })]?.data?.task?.title || "Tarea") + " — Astrea" : "Astrea";
