@@ -7,6 +7,7 @@
 package security
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -91,9 +92,18 @@ func (g *Guard) Locked() bool {
 // Audit appends one JSON line per invocation to a file. Safe for concurrent use.
 type Audit struct {
 	mu     sync.Mutex
-	f      *os.File
+	path   string
+	f      *os.File // nil after a failed reopen; Log tries again
+	size   int64
+	max    int64
 	notify func(Entry)
 }
+
+// maxAuditSize is the size past which the audit log is moved to <path>.1
+// (replacing the previous one) and a new one is started. The panel polls
+// sys.stats and service.status every few seconds and each call is a line, so
+// without this the log grew to tens of MB on every machine.
+const maxAuditSize = 16 << 20
 
 // Notify calls fn after every logged entry (set once, at startup).
 func (a *Audit) Notify(fn func(Entry)) {
@@ -110,11 +120,41 @@ func NewAudit(path string) (*Audit, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
-	if err != nil {
+	a := &Audit{max: maxAuditSize}
+	if err := a.open(path); err != nil {
 		return nil, err
 	}
-	return &Audit{f: f}, nil
+	return a, nil
+}
+
+func (a *Audit) open(path string) error {
+	a.path = path
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	if err != nil {
+		return err
+	}
+	a.f, a.size = f, 0
+	if st, err := f.Stat(); err == nil {
+		a.size = st.Size()
+	}
+	return nil
+}
+
+// rotate moves the log to <path>.1 and opens a new one. Called with a.mu held.
+// os.Rename replaces <path>.1 on every OS, so the old .1 is only lost once the
+// new one is in place. If the rename fails (another process has the file open
+// on Windows), it keeps appending to the current file and tries again after
+// another max bytes.
+func (a *Audit) rotate() {
+	a.f.Close()
+	a.f = nil
+	renamed := os.Rename(a.path, a.path+".1") == nil
+	if err := a.open(a.path); err != nil {
+		return // a.f stays nil: Log reopens on the next call
+	}
+	if !renamed {
+		a.size = 0
+	}
 }
 
 // Entry is one audited invocation.
@@ -139,7 +179,7 @@ func (a *Audit) Log(ctx context.Context, method string, args json.RawMessage, er
 		return
 	}
 	e := Entry{Time: time.Now().UTC().Format(time.RFC3339), Method: method, OK: err == nil, Work: protocol.WorkID(ctx)}
-	if s := string(args); s != "" && s != "null" && s != "{}" {
+	if s := string(redact(args)); s != "" && s != "null" && s != "{}" {
 		if len(s) > maxAuditArgs {
 			s = s[:maxAuditArgs] + "…"
 		}
@@ -150,7 +190,16 @@ func (a *Audit) Log(ctx context.Context, method string, args json.RawMessage, er
 	}
 	data, _ := json.Marshal(e)
 	a.mu.Lock()
-	a.f.Write(append(data, '\n'))
+	if a.f == nil && a.path != "" {
+		a.open(a.path)
+	}
+	if a.f != nil {
+		if a.max > 0 && a.size >= a.max {
+			a.rotate()
+		}
+		n, _ := a.f.Write(append(data, '\n'))
+		a.size += int64(n)
+	}
 	a.mu.Unlock()
 	if a.notify != nil {
 		a.notify(e)
@@ -159,10 +208,12 @@ func (a *Audit) Log(ctx context.Context, method string, args json.RawMessage, er
 
 // Path is the audit file location ("" if disabled).
 func (a *Audit) Path() string {
-	if a == nil || a.f == nil {
+	if a == nil {
 		return ""
 	}
-	return a.f.Name()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.path
 }
 
 // ReadAudit returns the last limit entries of the audit log at path, newest
@@ -172,7 +223,21 @@ func ReadAudit(path string, limit int) ([]Entry, error) {
 }
 
 // ReadAuditFunc is ReadAudit keeping only the entries keep accepts (all if nil).
+// Right after a rotation the current file is short, so the rest comes from
+// the rotated <path>.1.
 func ReadAuditFunc(path string, limit int, keep func(Entry) bool) ([]Entry, error) {
+	out, err := readAuditFile(path, limit, keep)
+	if err != nil || len(out) >= limit {
+		return out, err
+	}
+	older, err := readAuditFile(path+".1", limit-len(out), keep)
+	if err != nil {
+		return out, nil
+	}
+	return append(out, older...), nil
+}
+
+func readAuditFile(path string, limit int, keep func(Entry) bool) ([]Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -201,7 +266,65 @@ func ReadAuditFunc(path string, limit int, keep func(Entry) bool) ([]Entry, erro
 
 // Close closes the audit file.
 func (a *Audit) Close() {
-	if a != nil && a.f != nil {
-		a.f.Close()
+	if a == nil {
+		return
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.f != nil {
+		a.f.Close()
+		a.f = nil
+	}
+	a.path = "" // closed for good: Log must not reopen it
+}
+
+// secretKeys are argument fields whose values never reach the audit log or
+// the panel's feed: recipe.apply secrets and source tokens, download headers.
+var secretKeys = map[string]bool{"secrets": true, "token": true, "password": true, "authorization": true}
+
+// secretMarks are the spellings of secretKeys looked for before parsing.
+var secretMarks = [][]byte{[]byte(`"secrets"`), []byte(`"token"`), []byte(`"password"`),
+	[]byte(`"authorization"`), []byte(`"Authorization"`), []byte(`"Token"`), []byte(`"Password"`)}
+
+// redact replaces the values of secretKeys, at any depth, with "***". Args
+// that mention none of them are returned untouched (and unparsed: fs.write
+// payloads can be megabytes).
+func redact(args json.RawMessage) json.RawMessage {
+	found := false
+	for _, k := range secretMarks {
+		if bytes.Contains(args, k) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return args
+	}
+	var v any
+	if err := json.Unmarshal(args, &v); err != nil {
+		return json.RawMessage(`"(unparsable arguments with secrets, not recorded)"`)
+	}
+	out, err := json.Marshal(redactValue(v))
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+func redactValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, x := range t {
+			if secretKeys[strings.ToLower(k)] {
+				t[k] = "***"
+			} else {
+				t[k] = redactValue(x)
+			}
+		}
+	case []any:
+		for i, x := range t {
+			t[i] = redactValue(x)
+		}
+	}
+	return v
 }
