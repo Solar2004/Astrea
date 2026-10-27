@@ -4,3 +4,6 @@
 /astrea-hub
 /astrea-agent
 /dist/
+
+# Variables de despliegue (llevan la authkey de Tailscale)
+install.env

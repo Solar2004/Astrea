@@ -105,6 +105,27 @@ func TestRemoteWithoutHelperFailsFast(t *testing.T) {
 	}
 }
 
+func TestSetTokenReconnects(t *testing.T) {
+	addr := freeAddr(t)
+	stop := helper(t, addr) // the fake helper authenticates with "tok"
+	defer stop()
+	b := New("ws://"+addr+"/ws", "wrong")
+	r := Remote{Bridge: b, Local: echo{}}
+
+	// Wrong token: the dial is refused, so to the bridge the helper is
+	// unreachable (no session).
+	if _, err := r.Invoke(context.Background(), nil, func(protocol.StreamChunk) {}); !errors.Is(err, NoSession) {
+		t.Fatalf("with the wrong token: %v", err)
+	}
+	// Same token is a no-op and keeps the cached (nil) connection.
+	b.SetToken("wrong")
+	// Point the bridge at the right token: the next call reconnects and works.
+	b.SetToken("tok")
+	if _, err := r.Invoke(context.Background(), json.RawMessage(`{"x":1}`), func(protocol.StreamChunk) {}); err != nil {
+		t.Fatalf("after SetToken: %v", err)
+	}
+}
+
 func TestRemoteForwardsAndSurvivesHelperRestart(t *testing.T) {
 	addr := freeAddr(t)
 	stop := helper(t, addr)

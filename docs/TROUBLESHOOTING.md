@@ -81,7 +81,7 @@ Si la PC está gestionada por una organización (`dsregcmd /status` muestra
   ves `listen … retrying (is Tailscale connected?)`, es normal mientras
   Tailscale asigna la IP; debe conectar en segundos. Si la tarea aparece en
   estado `Disabled` o no está, reinstala: `& ... install.ps1`.
-- **La tarea headless no se registró** (Windows rechazó S4U). El instalador cae
+- **La tarea headless no se registró** (Windows rechazó la tarea de SYSTEM, p. ej. por una directiva). El instalador cae
   al modo clásico (una tarea al iniciar sesión) y lo avisa. Entonces los
   modelos solo corren con la sesión iniciada. Para forzar el modo clásico a
   propósito: `$env:ASTREA_HEADLESS=0` antes de instalar.

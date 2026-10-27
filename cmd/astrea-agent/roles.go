@@ -23,8 +23,8 @@ import (
 
 // Agent roles. On Windows the installer runs two processes of this binary:
 //
-//   - headless, from a scheduled task at boot as the desktop user (S4U, no
-//     session needed): owns the tailnet port, services, jobs, downloads… so
+//   - headless, from a scheduled task at boot as SYSTEM (no session or
+//     account needed): owns the tailnet port, services, jobs, downloads… so
 //     models come back after a reboot even if nobody logs in.
 //   - gui, from a scheduled task at logon inside the user's desktop: serves
 //     only screen/mouse/keyboard/idle on loopback for the headless agent.
@@ -102,11 +102,21 @@ type unlockGate struct {
 }
 
 // lastAutoUnlock throttles the SYSTEM helper: a burst of clicks must not
-// schedule one task per click.
+// schedule one task per click. After a failed try it waits longer and longer:
+// on an account with a password every try is a failed sign-in, and Windows
+// locks the account out after ten in ten minutes.
 var lastAutoUnlock struct {
 	sync.Mutex
-	at time.Time
+	at   time.Time
+	wait time.Duration
+	busy bool // a try is in flight (a sign-in wait lasts over a minute)
 }
+
+const (
+	unlockEvery     = 30 * time.Second
+	unlockFailFirst = 5 * time.Minute
+	unlockFailMax   = 2 * time.Hour
+)
 
 func (u unlockGate) Invoke(ctx context.Context, payload json.RawMessage, emit capability.Emit) (any, error) {
 	// peek: only look (the panel's thumbnails). Signing in would hide the very
@@ -122,34 +132,110 @@ func (u unlockGate) Invoke(ctx context.Context, payload json.RawMessage, emit ca
 }
 
 // ensureUnlocked asks the helper whether the lock screen is up and, if it is,
-// runs the unlock helper. Best effort: any failure just lets the action through
-// so the caller gets the real error instead of ours.
+// runs the unlock helper. With no helper and nobody signed in, the console
+// shows the sign-in screen, and the same keys sign a passwordless account in
+// (f3-1, 2026-10-26). Best effort: any failure just lets the action through so
+// the caller gets the real error instead of ours.
 func (u unlockGate) ensureUnlocked(ctx context.Context) {
+	signIn := false
 	res, err := u.bridge.Call(ctx, "sys.idle", json.RawMessage(`{}`))
 	if err != nil {
-		return // nobody logged in, or no helper: nothing we can unlock
-	}
-	var idle struct {
-		Locked bool `json:"locked"`
-	}
-	if json.Unmarshal(res.Result, &idle) != nil || !idle.Locked {
-		return
+		// Someone signed in but no helper: it is down, the watchdog brings it
+		// back; there is nothing to unlock.
+		if ctx.Err() != nil || consoleUser() != "" {
+			return
+		}
+		signIn = true
+	} else {
+		var idle struct {
+			Locked bool `json:"locked"`
+		}
+		if json.Unmarshal(res.Result, &idle) != nil || !idle.Locked {
+			return
+		}
 	}
 	lastAutoUnlock.Lock()
-	if time.Since(lastAutoUnlock.at) < 30*time.Second {
+	if lastAutoUnlock.wait == 0 {
+		lastAutoUnlock.wait = unlockEvery
+	}
+	if lastAutoUnlock.busy || time.Since(lastAutoUnlock.at) < lastAutoUnlock.wait {
 		lastAutoUnlock.Unlock()
 		return
 	}
+	lastAutoUnlock.busy = true
 	lastAutoUnlock.at = time.Now()
 	lastAutoUnlock.Unlock()
+	defer func() {
+		lastAutoUnlock.Lock()
+		lastAutoUnlock.busy = false
+		lastAutoUnlock.Unlock()
+	}()
 
-	u.logger.Printf("auto-unlock: the PC is on the lock screen; signing back in before %s", u.Capability.Name())
+	what := "the PC is on the lock screen; signing back in"
+	if signIn {
+		what = "nobody is signed in; signing in from the sign-in screen"
+	}
+	u.logger.Printf("auto-unlock: %s before %s", what, u.Capability.Name())
 	out, err := capability.AutoUnlock()
-	if err != nil {
-		u.logger.Printf("auto-unlock: %v", err)
+	if errors.Is(err, capability.ErrNoUnlock) {
 		return
 	}
-	u.logger.Printf("auto-unlock: %v", out)
+	ok := err == nil && out["unlocked"] == true
+	if err != nil {
+		u.logger.Printf("auto-unlock: %v", err)
+	} else {
+		u.logger.Printf("auto-unlock: %v", out)
+	}
+	if signIn {
+		// The unlock helper judges by the desktop it was started on, which a
+		// fresh sign-in leaves behind: it says "still locked" while the new
+		// session loads. Who is at the console is the real answer.
+		ok = u.waitSignedIn(ctx)
+	}
+	if ctx.Err() != nil {
+		return // the caller gave up while we waited: that says nothing about the try
+	}
+
+	lastAutoUnlock.Lock()
+	if ok {
+		lastAutoUnlock.wait = unlockEvery
+	} else {
+		lastAutoUnlock.wait = min(max(lastAutoUnlock.wait*2, unlockFailFirst), unlockFailMax)
+		u.logger.Printf("auto-unlock: did not get in (a password, or another sign-in screen?); next try in %s at the earliest", lastAutoUnlock.wait)
+	}
+	lastAutoUnlock.Unlock()
+}
+
+// waitSignedIn waits for a sign-in to land at the console and then, briefly,
+// for the logon task to bring the gui helper up, so the action that triggered
+// it can run on the new desktop.
+func (u unlockGate) waitSignedIn(ctx context.Context) bool {
+	user := ""
+	for deadline := time.Now().Add(30 * time.Second); user == "" && time.Now().Before(deadline); {
+		if !sleepCtx(ctx, time.Second) {
+			return false
+		}
+		user = consoleUser()
+	}
+	if user == "" {
+		return false
+	}
+	u.logger.Printf("auto-unlock: %s is signed in", user)
+	for deadline := time.Now().Add(40 * time.Second); time.Now().Before(deadline); {
+		if u.bridge.Probe(ctx) == nil || !sleepCtx(ctx, 2*time.Second) {
+			break
+		}
+	}
+	return true
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 // registerGUIProxies advertises the GUI capabilities on the headless agent
@@ -205,6 +291,7 @@ func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *
 	guard := security.NewGuard(cfg.EffectiveAllow(), cfg.Deny)
 	srv := &transport.Server{Registry: reg, Auth: auth.New(cfg.Token), Guard: guard, Logger: logger}
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler()}
+	go yieldOffConsole(ctx, logger, stop)
 	go func() {
 		ln := listenRetry(ctx, addr, logger)
 		if ln == nil {
@@ -219,6 +306,46 @@ func runGUIHelper(ctx context.Context, cfg *config.Config, addr string, logger *
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+}
+
+// yieldOffConsole stops this helper once its session is no longer the
+// console's while someone else is signed in there (a user switch): it would
+// keep the loopback port, the headless agent would keep talking to a desktop
+// nobody sees, and the new user's helper could not start. Two checks in a row,
+// so the moment of a switch does not count.
+func yieldOffConsole(ctx context.Context, logger *log.Logger, stop func()) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	misses := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !offConsole() {
+			misses = 0
+			continue
+		}
+		if misses++; misses >= 2 {
+			logger.Printf("gui helper: %s is signed in at the console and this session is not; giving way to their helper", consoleUser())
+			stop()
+			return
+		}
+	}
+}
+
+// guiDataDir is where a clean-mode gui helper (launched for a standard user)
+// keeps its log, clipboard history and other state: %LOCALAPPDATA%\Astrea,
+// which that user can write, unlike C:\ProgramData\Astrea.
+func guiDataDir() string {
+	if d := os.Getenv("LOCALAPPDATA"); d != "" {
+		return filepath.Join(d, "Astrea")
+	}
+	if d, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(d, "Astrea")
+	}
+	return filepath.Join(os.TempDir(), "Astrea")
 }
 
 // sessionUser names the clipboard history file: each person's copies are

@@ -50,14 +50,41 @@ var version = "dev"
 // listenRetry binds addr, retrying until it succeeds or ctx ends. At logon
 // the agent often starts before Tailscale has assigned the tailnet IP it is
 // configured to bind, so a failed bind is expected and transient.
+//
+// If the address stays taken by another Astrea agent (its /healthz answers)
+// for dupAfter, this copy is a duplicate (a second gui helper launched while
+// the first was alive) and exits: retrying forever wrote tens of thousands
+// of log lines on several PCs. dupAfter is long enough not to trip over the
+// hand-over after an update, where the old process still holds the port for
+// a few seconds. Failures are logged once, then every 10 minutes.
 func listenRetry(ctx context.Context, addr string, logger *log.Logger) net.Listener {
+	const dupAfter = 2 * time.Minute
 	delay := time.Second
+	var takenSince, lastLog time.Time
+	fails := 0
 	for {
 		ln, err := net.Listen("tcp", addr)
 		if err == nil {
+			if fails > 0 {
+				logger.Printf("listen %s: bound after %d failed tries", addr, fails)
+			}
 			return ln
 		}
-		logger.Printf("listen %s: %v (retrying in %s; is Tailscale connected?)", addr, err, delay)
+		fails++
+		if time.Since(lastLog) >= 10*time.Minute {
+			logger.Printf("listen %s: %v (try %d, retrying every %s; is Tailscale connected?)", addr, err, fails, delay)
+			lastLog = time.Now()
+		}
+		if agentAnswers(addr) {
+			if takenSince.IsZero() {
+				takenSince = time.Now()
+			} else if time.Since(takenSince) >= dupAfter {
+				logger.Printf("listen %s: another Astrea agent has served it for %s; this copy is a duplicate and exits", addr, dupAfter)
+				os.Exit(0)
+			}
+		} else {
+			takenSince = time.Time{}
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -67,6 +94,24 @@ func listenRetry(ctx context.Context, addr string, logger *log.Logger) net.Liste
 			delay *= 2
 		}
 	}
+}
+
+// agentAnswers reports whether an Astrea agent serves /healthz at addr. A
+// wildcard bind (":7700", "0.0.0.0:7700") is asked on loopback: Windows does
+// not connect to 0.0.0.0.
+func agentAnswers(addr string) bool {
+	if host, port, err := net.SplitHostPort(addr); err == nil && (host == "" || host == "0.0.0.0" || host == "::") {
+		addr = net.JoinHostPort("127.0.0.1", port)
+	}
+	c := &http.Client{Timeout: 3 * time.Second}
+	resp, err := c.Get("http://" + addr + "/healthz")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b := make([]byte, 2)
+	n, _ := io.ReadFull(resp.Body, b)
+	return resp.StatusCode == http.StatusOK && string(b[:n]) == "ok"
 }
 
 // panelPolls are the read-only calls the panel and hub make on their own
@@ -130,12 +175,21 @@ func run() *log.Logger {
 		log.Fatalf("unknown --role %q (want full, headless or gui)", *role)
 	}
 
+	// cleanGUI: a gui helper the headless agent launched for a standard
+	// (non-administrator) user. That user cannot read config.json (ACL:
+	// Administrators + SYSTEM), so the helper carries its bearer in the
+	// environment (ASTREA_GUI_SECRET) and keeps its log/data under %LOCALAPPDATA%.
+	cleanGUI := *role == roleGUI && os.Getenv("ASTREA_GUI_SECRET") != ""
+
 	logger := log.New(os.Stderr, "astrea-agent ", log.LstdFlags)
 	if *logFile == "" && runtime.GOOS == "windows" {
 		// The Windows build has no console, so stderr goes nowhere.
 		*logFile = filepath.Join(filepath.Dir(*cfgPath), "agent.log")
 		if *role == roleGUI {
 			*logFile = filepath.Join(filepath.Dir(*cfgPath), "agent-gui.log")
+		}
+		if cleanGUI {
+			*logFile = filepath.Join(guiDataDir(), "agent-gui.log")
 		}
 	}
 	if *logFile != "" {
@@ -158,6 +212,18 @@ func run() *log.Logger {
 	logger.Printf("astrea-agent %s %s/%s starting (role %s, config %s)", version, runtime.GOOS, runtime.GOARCH, *role, *cfgPath)
 	if exe, err := update.Self(); err == nil {
 		update.CleanupOld(exe)
+	}
+
+	// Clean mode runs before config.Load: a standard user cannot read
+	// config.json, so there is nothing to load — the secret and data dir are
+	// supplied here instead.
+	if cleanGUI {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		cfg := &config.Config{Token: os.Getenv("ASTREA_GUI_SECRET"), DataDir: guiDataDir()}
+		logger.Printf("role gui: clean mode (secret from environment, no config.json), data dir %s", cfg.DataDir)
+		runGUIHelper(ctx, cfg, *guiAddr, logger, stop)
+		return logger
 	}
 
 	cfg, err := config.Load(*cfgPath)
@@ -258,7 +324,7 @@ func run() *log.Logger {
 		bridge = guibridge.New("ws://"+*guiAddr+"/ws", cfg.Token)
 		bridge.SignedIn = consoleUser
 		registerGUIProxies(reg, bridge, logger)
-		go watchGUIHelper(ctx, bridge, logger)
+		go watchGUIHelper(ctx, bridge, cfg.Token, *cfgPath, *guiAddr, logger)
 	} else {
 		for _, c := range guiCaps() {
 			reg.Register(c)

@@ -62,6 +62,25 @@ type Bridge struct {
 // ws://127.0.0.1:7701/ws.
 func New(wsURL, token string) *Bridge { return &Bridge{wsURL: wsURL, token: token} }
 
+// SetToken changes the bearer the bridge uses to reach the helper and drops
+// the cached connection so the next call reconnects with it. The headless
+// agent calls this when it hands the session over between two helpers that
+// authenticate differently: the administrator helper (started by the logon
+// task, reads config.json, uses cfg.Token) and the standard-user helper
+// (launched by the headless agent itself with a random per-launch secret).
+func (b *Bridge) SetToken(token string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if token == b.token {
+		return
+	}
+	b.token = token
+	if b.cur != nil {
+		b.cur.Close()
+		b.cur = nil
+	}
+}
+
 func (b *Bridge) client(ctx context.Context) (*transport.Client, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -93,8 +112,13 @@ func (b *Bridge) drop(c *transport.Client) {
 
 // Available reports whether a GUI helper answers right now.
 func (b *Bridge) Available(ctx context.Context) bool {
+	return b.Probe(ctx) == nil
+}
+
+// Probe is Available with the reason it failed (refused, timeout, auth…).
+func (b *Bridge) Probe(ctx context.Context) error {
 	_, err := b.client(ctx)
-	return err == nil
+	return err
 }
 
 // Call forwards method to the helper. A request that never reached the
