@@ -317,6 +317,10 @@ func run() *log.Logger {
 	reg.Register(capability.ProcList{})
 	reg.Register(capability.ProcKill{})
 	reg.Register(capability.SysUptime{Store: ups})
+	// Microphone: listen to the machine and read/set its input level. The
+	// WASAPI backend works at the system level, so it needs no desktop session.
+	reg.Register(capability.AudioCapture{})
+	reg.Register(capability.MicVolume{})
 	// Input, screen and idle detection need the desktop session: served here,
 	// or (headless) forwarded to the gui helper running in that session.
 	var bridge *guibridge.Bridge

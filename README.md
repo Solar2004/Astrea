@@ -124,6 +124,8 @@ make test       # tests
 | `astrea.mouse.move/click/button/scroll` | Mover, clic, pulsar/soltar (arrastrar) y rueda |
 | `astrea.key.type/press` | Escribir texto; teclas y combinaciones (`ctrl+c`, `alt+tab`, `win+r`) |
 | `astrea.screen.capture` | Captura de pantalla — la IA la recibe como imagen        |
+| `astrea.audio.capture` | Graba unos segundos del micrófono — la IA lo recibe como audio (gain/normalize) |
+| `astrea.audio.mic`    | Lee o ajusta el nivel de entrada del micro (0-100), silenciar/activar |
 | `astrea.service.start/stop/status/logs` | Servidores supervisados (ollama, llama-server, ComfyUI): reinicio, autoarranque, `expose` a `/dyn` |
 | `astrea.job.start/status/logs/cancel` | Tareas largas en segundo plano (instalar torch, convertir modelos) |
 | `astrea.deps.check/ensure` | Detecta e instala git, python, CUDA… (winget / apt / pacman) |

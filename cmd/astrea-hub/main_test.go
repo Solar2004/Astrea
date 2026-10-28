@@ -24,3 +24,19 @@ func TestRenderExtractsImages(t *testing.T) {
 		t.Fatalf("json part should not repeat the image: %s", txt)
 	}
 }
+
+func TestRenderExtractsAudio(t *testing.T) {
+	res := &transport.CallResult{Result: json.RawMessage(`{"seconds":5,"audio":[{"mime_type":"audio/wav","data":"aGk="}]}`)}
+	out := render(res)
+	if len(out) != 2 {
+		t.Fatalf("want audio + json, got %d items", len(out))
+	}
+	clip, ok := out[0].(*mcp.AudioContent)
+	if !ok || clip.MIMEType != "audio/wav" || string(clip.Data) != "hi" {
+		t.Fatalf("first item should be the decoded audio, got %#v", out[0])
+	}
+	txt := out[1].(*mcp.TextContent).Text
+	if !json.Valid([]byte(txt)) || strings.Contains(txt, "audio") {
+		t.Fatalf("json part should not repeat the audio: %s", txt)
+	}
+}

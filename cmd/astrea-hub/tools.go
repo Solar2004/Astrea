@@ -381,6 +381,8 @@ func render(res *transport.CallResult) []mcp.Content {
 		if json.Unmarshal(res.Result, &obj) == nil {
 			images, rest := extractImages(obj)
 			out = append(out, images...)
+			clips, rest := extractAudio(rest)
+			out = append(out, clips...)
 			if len(rest) > 0 {
 				out = append(out, &mcp.TextContent{Text: prettyJSON(rest)})
 			}
@@ -417,6 +419,32 @@ func extractImages(obj map[string]json.RawMessage) ([]mcp.Content, map[string]js
 		out = append(out, &mcp.ImageContent{MIMEType: im.MimeType, Data: data})
 	}
 	delete(obj, "images")
+	return out, obj
+}
+
+// extractAudio pulls decodable entries out of obj["audio"], returning them as
+// MCP audio content and obj without them — the mirror of extractImages.
+func extractAudio(obj map[string]json.RawMessage) ([]mcp.Content, map[string]json.RawMessage) {
+	raw, ok := obj["audio"]
+	if !ok {
+		return nil, obj
+	}
+	var clips []struct {
+		MimeType string `json:"mime_type"`
+		Data     string `json:"data"`
+	}
+	if json.Unmarshal(raw, &clips) != nil {
+		return nil, obj
+	}
+	var out []mcp.Content
+	for _, c := range clips {
+		data, err := base64.StdEncoding.DecodeString(c.Data)
+		if err != nil || !strings.HasPrefix(c.MimeType, "audio/") {
+			continue
+		}
+		out = append(out, &mcp.AudioContent{MIMEType: c.MimeType, Data: data})
+	}
+	delete(obj, "audio")
 	return out, obj
 }
 

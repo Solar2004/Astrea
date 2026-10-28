@@ -139,6 +139,8 @@ func main() {
 	mux.HandleFunc("/api/live", p.handleLive)
 	mux.HandleFunc("/api/control", p.handleControl)
 	mux.HandleFunc("/api/input", p.handleInput)
+	mux.HandleFunc("/api/mic", p.handleMic)
+	mux.HandleFunc("/api/mic/level", p.handleMicLevel)
 	mux.HandleFunc("/api/memory", p.handleMemory)
 	mux.HandleFunc("/api/uptime", p.handleUptime)
 	mux.HandleFunc("/api/work/shot", p.handleWorkShot)

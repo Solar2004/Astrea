@@ -321,6 +321,12 @@
   .ctl-bar b { color: color-mix(in srgb, var(--warn) 65%, var(--text)); }
   .ctl-bar .keys { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
   .ctl-bar .keys .btn { height: 26px; padding: 0 9px; font-size: 12px; background: var(--surface); }
+  /* mic-bar: hereda el layout de .ctl-bar pero con tinte verde (escucha activa), no ámbar */
+  .mic-bar { background: color-mix(in srgb, var(--good) 12%, var(--surface)); }
+  .mic-bar b { color: color-mix(in srgb, var(--good) 65%, var(--text)); }
+  .mic-bar .miclab { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+  .mic-bar input[type=range] { width: 110px; accent-color: var(--good); cursor: pointer; }
+  .mic-bar audio { height: 30px; vertical-align: middle; }
   .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
   .toggle input { appearance: none; width: 36px; height: 22px; border-radius: 999px; background: var(--surface-3); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
   .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
@@ -667,12 +673,20 @@
         <option value="960">Rápida</option><option value="1280" selected>Normal</option><option value="1920">Nítida</option>
       </select>
       <button class="btn sm ghost" id="shotFit">Tamaño real</button>
+      <button class="btn sm ghost" id="shotMic" aria-label="Escuchar el micrófono">🎤 Escuchar</button>
       <button class="btn sm primary" id="shotCtl"></button>
       <button class="btn sm ghost icon-only" id="shotClose" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
     <div class="ctl-bar" id="shotCtlBar" hidden>
       <span>🕹 <b>Tienes el control</b> — la IA no puede usar ratón ni teclado. Haz clic en la imagen y escribe.</span>
       <span class="keys" id="shotKeys"></span>
+    </div>
+    <div class="ctl-bar mic-bar" id="shotMicBar" hidden>
+      <span>🎤 <b>Escuchando el micrófono</b></span>
+      <audio id="micAudio" autoplay></audio>
+      <label class="miclab">Volumen <input type="range" id="micVol" min="0" max="100" value="100"></label>
+      <label class="miclab">Nivel del micro <input type="range" id="micLevel" min="0" max="100" value="50"></label>
+      <button class="btn sm" id="micMute">Silenciar micro</button>
     </div>
     <div class="body" id="shotBody" tabindex="-1"></div>
   </div>
@@ -2461,7 +2475,8 @@ function draw() {
 // out of mouse and keyboard; meanwhile clicks, drags, wheel and keys go to POST /api/input.
 const shot = document.getElementById("shot"), shotBody = document.getElementById("shotBody");
 const live = { machine: "", title: "", img: null, ctl: false, busy: false, renew: 0, chain: Promise.resolve(),
-               drag: null, move: null, moveTimer: 0, text: "", textTimer: 0, wheel: 0, wheelTimer: 0, lastErr: 0 };
+               drag: null, move: null, moveTimer: 0, text: "", textTimer: 0, wheel: 0, wheelTimer: 0, lastErr: 0,
+               mic: false, micMuted: false };
 const BTN = ["left", "middle", "right"];
 const QUICK_KEYS = [["Esc", "esc"], ["Tab", "tab"], ["Enter", "enter"], ["Alt+Tab", "alt+tab"], ["Win", "win"], ["Ctrl+C", "ctrl+c"], ["Ctrl+V", "ctrl+v"]];
 const liveURL = () => "/api/live?" + q({ machine: live.machine, w: document.getElementById("shotQ").value });
@@ -2479,6 +2494,7 @@ function closeShot() {
   if (!shot.classList.contains("open")) return;
   if (live.ctl) setControl(false);
   stopStream();
+  stopMic();
   shot.classList.remove("open");
   shotBody.classList.remove("real");
   document.getElementById("shotFit").textContent = "Tamaño real";
@@ -2505,6 +2521,42 @@ function stopStream() {
   img.onload = img.onerror = null;
   img.removeAttribute("src"); // closes the stream
   live.img = null;
+}
+
+// Mic: /api/mic is a continuous WAV stream the <audio> element plays, mirroring
+// how the <img> plays the MJPEG screen. Clearing its src closes the stream.
+function drawMic() {
+  const b = document.getElementById("shotMic");
+  b.className = "btn sm " + (live.mic ? "danger" : "ghost");
+  b.textContent = live.mic ? "🎤 Dejar de escuchar" : "🎤 Escuchar";
+  document.getElementById("shotMicBar").hidden = !live.mic;
+}
+function setMicUI(j) {
+  if (!j) return;
+  if (typeof j.level === "number") document.getElementById("micLevel").value = j.level;
+  live.micMuted = !!j.mute;
+  document.getElementById("micMute").textContent = live.micMuted ? "Activar micro" : "Silenciar micro";
+}
+async function startMic() {
+  const a = document.getElementById("micAudio");
+  a.onerror = () => { if (live.mic) { toast("Se cortó el audio del micrófono", "bad"); stopMic(); } };
+  a.volume = document.getElementById("micVol").value / 100;
+  a.src = "/api/mic?" + q({ machine: live.machine });
+  live.mic = true;
+  drawMic();
+  try { await a.play(); } catch (e) { /* el navegador puede diferir hasta un gesto */ }
+  try { setMicUI(await api("GET", "/api/mic/level?" + q({ machine: live.machine }))); }
+  catch (e) { toast("No se pudo leer el micrófono: " + e.message, "bad"); }
+}
+function stopMic() {
+  const a = document.getElementById("micAudio");
+  if (!a) return;
+  a.onerror = null;
+  a.pause();
+  a.removeAttribute("src"); // cierra el stream
+  a.load();
+  live.mic = false;
+  drawMic();
 }
 // diagnose: an <img> can't see the HTTP status, so ask once with fetch and drop the body.
 async function diagnose() {
@@ -2652,6 +2704,16 @@ document.getElementById("shotFit").onclick = toggleFit;
 document.getElementById("shotClose").onclick = closeShot;
 document.getElementById("shotCtl").onclick = () => setControl(!live.ctl);
 document.getElementById("shotQ").onchange = startStream;
+document.getElementById("shotMic").onclick = () => live.mic ? stopMic() : startMic();
+document.getElementById("micVol").oninput = e => { document.getElementById("micAudio").volume = e.target.value / 100; };
+document.getElementById("micLevel").onchange = async e => {
+  try { setMicUI(await api("POST", "/api/mic/level", JSON.stringify({ machine: live.machine, level: +e.target.value }))); }
+  catch (err) { toast("No se pudo ajustar el micro: " + err.message, "bad"); }
+};
+document.getElementById("micMute").onclick = async () => {
+  try { setMicUI(await api("POST", "/api/mic/level", JSON.stringify({ machine: live.machine, mute: !live.micMuted }))); }
+  catch (err) { toast("No se pudo silenciar el micro: " + err.message, "bad"); }
+};
 shot.addEventListener("click", e => { if (e.target === shot && !live.ctl) closeShot(); }); // with control, only the X closes it
 document.addEventListener("keydown", e => { if (e.key === "Escape") { closeShot(); logs.classList.remove("open"); document.getElementById("app").classList.remove("nav-open"); } });
 
